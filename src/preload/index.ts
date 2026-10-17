@@ -97,7 +97,7 @@ const plexoApi = {
     return () => ipcRenderer.removeListener(IpcChannels.whenDoneChanged, listener)
   },
 
-  onNetworksChanged:(callback: (networks: NetworkInterfaceInfo[]) => void): (() => void) => {
+  onNetworksChanged: (callback: (networks: NetworkInterfaceInfo[]) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, networks: NetworkInterfaceInfo[]): void =>
       callback(networks)
     ipcRenderer.on(IpcChannels.networksChanged, listener)

@@ -10,6 +10,7 @@ export const IpcChannels = {
   readClipboardText: 'clipboard:read-text',
   revealDownload: 'shell:reveal-download',
   openDownload: 'shell:open-download',
+  checksums: 'download:checksums',
   startDownload: 'download:start',
   listDownloads: 'download:list',
   listHistory: 'history:list',

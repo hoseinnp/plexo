@@ -26,6 +26,8 @@ export const testKnobs = {
   slowForMs: positiveNumber('PLEXO_E2E_SLOW_FOR_MS', 10_000),
   silentAfterMs: positiveNumber('PLEXO_E2E_SILENT_MS', 5_000),
   hedgeAfterMs: positiveNumber('PLEXO_E2E_HEDGE_MS', 2_000),
+  /** What a minute is to a failed download's automatic retries; see downloadManager.ts. */
+  autoRetryMinuteMs: positiveNumber('PLEXO_E2E_AUTO_RETRY_MS', 60_000),
   /** How long a magnet link may take to find peers that send its metadata. */
   magnetTimeoutMs: positiveNumber('PLEXO_E2E_MAGNET_MS', 3 * 60_000),
   /** Tests turn the DHT off, so a run never reaches out to the internet's DHT nodes. */

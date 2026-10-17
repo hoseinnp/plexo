@@ -90,11 +90,17 @@ test.describe('what each state offers', () => {
     expect(ids([download({ status: 'completed' })])).toEqual([
       'open',
       'reveal',
+      'checksum',
       'copy',
       'remove',
       'trash'
     ])
-    expect(ids([finished()])).toEqual(['open', 'reveal', 'copy', 'remove', 'trash'])
+    expect(ids([finished()])).toEqual(['open', 'reveal', 'checksum', 'copy', 'remove', 'trash'])
+  })
+
+  test('a torrent’s folder has no single checksum', () => {
+    const folder = finished({ kind: 'torrent', folder: true } as Partial<FinishedDownload>)
+    expect(ids([folder])).not.toContain('checksum')
   })
 
   test('completed but moved: nothing that needs the file', () => {
@@ -210,7 +216,7 @@ test.describe('the selection toolbar', () => {
     ).toEqual(['fix', 'remove'])
     expect(shown([finished()])).toEqual({
       buttons: ['open', 'reveal'],
-      more: ['copy', 'remove', 'trash']
+      more: ['checksum', 'copy', 'remove', 'trash']
     })
   })
 

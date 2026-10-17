@@ -1,5 +1,5 @@
 import type { DownloadState, FinishedDownload } from '@shared/types'
-import { linkExpired } from './format'
+import { isFolder, linkExpired } from './format'
 
 /** Everything the app can do to a download, decided in one place. The row's button, the
  * right-click menu, the selection toolbar and a download's own screen all read this list, so
@@ -13,6 +13,7 @@ export type ActionId =
   | 'again'
   | 'open'
   | 'reveal'
+  | 'checksum'
   | 'copy'
   | 'cancel'
   | 'remove'
@@ -55,6 +56,8 @@ const appliesTo: Record<ActionId, (item: DownloadItem) => boolean> = {
   again: (item) => isFailed(item) && failureAction(item) === 'again',
   open: (item) => isDone(item) && !isMissing(item),
   reveal: (item) => (isDone(item) && !isMissing(item)) || isCancellable(item),
+  // One file: a torrent's folder has no single checksum.
+  checksum: (item) => isDone(item) && !isMissing(item) && !isFolder(item),
   copy: (item) => /^(https?:|magnet:)/i.test(item.url),
   cancel: isCancellable,
   remove: (item) => isDone(item) || isFailed(item),
@@ -62,13 +65,13 @@ const appliesTo: Record<ActionId, (item: DownloadItem) => boolean> = {
 }
 
 /** These make sense for one download at a time: with several selected, they aren't offered. */
-const SINGLE_ONLY: ReadonlySet<ActionId> = new Set(['fix', 'again', 'open', 'reveal'])
+const SINGLE_ONLY: ReadonlySet<ActionId> = new Set(['fix', 'again', 'open', 'reveal', 'checksum'])
 
 /** The order they're shown in, in groups: what to do with it, its link, getting rid of it.
  * Menus put a separator between groups. */
 export const ACTION_GROUPS: readonly (readonly ActionId[])[] = [
   ['pause', 'resume', 'retry', 'fix', 'again', 'open', 'reveal'],
-  ['copy'],
+  ['checksum', 'copy'],
   ['cancel', 'remove', 'trash']
 ]
 
@@ -106,7 +109,8 @@ export const TOOLBAR_PRIORITY: readonly ActionId[] = [
   'reveal',
   'remove',
   'trash',
-  'copy'
+  'copy',
+  'checksum'
 ]
 
 /** How many go on the toolbar as buttons. */

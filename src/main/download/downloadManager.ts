@@ -1,6 +1,7 @@
 import { trashDownload } from './trashDownload'
 import { describeError } from '../../shared/errors'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { lstat, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, sep } from 'node:path'
 import type { BrowserWindow } from 'electron'
@@ -18,6 +19,7 @@ import {
   type DownloadStatus,
   type DownloadUnitState,
   type DownloadUpdate,
+  type FileChecksums,
   type FinishedDownload,
   type HttpBlockState,
   type HttpDownloadNetwork,
@@ -104,7 +106,16 @@ interface RuntimeFields {
   peakReadings: { time: number; bytes: number }[]
   /** Changes asked of a torrent's choice of files, counted: only the latest applies. */
   fileChoices: number
+  /** The pending automatic retry of a failed download, and how many it has had since it last got
+   * further (see scheduleRetry). Not persisted: a relaunch re-arms one from state.retryAt. */
+  retryTimer?: NodeJS.Timeout
+  autoRetries?: number
+  failedAtBytes?: number
 }
+
+/** Minutes before each automatic retry of a failed download; after the last, it waits for the
+ * user. */
+const AUTO_RETRY_MINUTES = [1, 5, 15]
 
 interface HttpDownloadRuntime extends RuntimeFields, HttpTransferTarget {
   kind: 'http'
@@ -865,6 +876,10 @@ export class DownloadManager {
     // A resumed download's last minute starts when it does, not where it stopped before the
     // relaunch; a finished one keeps its chart.
     if (state.status !== 'completed') state.speedHistory = undefined
+    // A retry the relaunch cut short is armed again, though not before the app has settled.
+    if (state.status === 'error' && state.resumable !== false && state.retryAt) {
+      this.armRetry(runtime, Math.max(state.retryAt, Date.now() + testKnobs.autoRetryMinuteMs))
+    }
     recomputeAggregates(state, units)
     return runtime
   }
@@ -1222,6 +1237,7 @@ export class DownloadManager {
     if ((await runtime.file.size().catch(() => -1)) < 0) {
       runtime.state.error =
         'The partial download file is unavailable. Reconnect the destination drive and try again.'
+      this.disarmRetry(runtime)
       this.pushUpdate(runtime)
       return
     }
@@ -1237,6 +1253,7 @@ export class DownloadManager {
     if (this.runningCount() >= this.downloadsAtOnce || !this.scheduleAllowsDownloads()) {
       // Asked for by name, so it goes next.
       this.enqueue(runtime, true)
+      this.disarmRetry(runtime)
       runtime.state.error = undefined
       runtime.state.resumable = undefined
       runtime.pausedForNoNetwork = undefined
@@ -1249,6 +1266,7 @@ export class DownloadManager {
 
   /** Starts a run of a paused, failed or queued download, from where it stopped. */
   private begin(runtime: DownloadRuntime): void {
+    this.disarmRetry(runtime)
     if (this.suspending || !this.scheduleAllowsDownloads()) {
       this.enqueue(runtime, false)
       this.pushUpdate(runtime)
@@ -1609,6 +1627,26 @@ export class DownloadManager {
     return false
   }
 
+  /** A finished file's MD5, SHA-1 and SHA-256, read once for all three. Like open, null means
+   * it's no longer there. */
+  async checksums(id: string): Promise<FileChecksums | null> {
+    const download = this.runtimes.get(id)?.state ?? (await findInHistory(id))
+    const path = download?.destinationPath
+    if (!path || !(await pathExists(path).catch(() => false))) {
+      this.historyChanged()
+      return null
+    }
+    const md5 = createHash('md5')
+    const sha1 = createHash('sha1')
+    const sha256 = createHash('sha256')
+    for await (const chunk of createReadStream(path)) {
+      md5.update(chunk)
+      sha1.update(chunk)
+      sha256.update(chunk)
+    }
+    return { md5: md5.digest('hex'), sha1: sha1.digest('hex'), sha256: sha256.digest('hex') }
+  }
+
   async suspendAll(): Promise<void> {
     await this.initialization
     this.suspending = true
@@ -1769,8 +1807,50 @@ export class DownloadManager {
     runtime.state.status = 'error'
     runtime.state.error = message
     runtime.state.resumable = !discard
-    this.notify('Download failed', `${runtime.state.fileName}: ${describeError(message)}`)
+    const minutes = discard ? undefined : this.scheduleRetry(runtime)
+    // Told on the first failure and when Plexo gives up, not on each retry in between.
+    if (minutes === undefined || runtime.autoRetries === 1) {
+      const next = minutes === undefined ? '' : ` Trying again in ${minutes} min.`
+      this.notify('Download failed', `${runtime.state.fileName}: ${describeError(message)}${next}`)
+    }
     this.stopRun(runtime)
+  }
+
+  /** Arms the next automatic retry of a failed download (see AUTO_RETRY_MINUTES): the minutes
+   * until it, or undefined once they're used up. A run that got further than the last failure
+   * earns a fresh set. */
+  private scheduleRetry(runtime: DownloadRuntime): number | undefined {
+    if (runtime.state.bytesDownloaded > (runtime.failedAtBytes ?? -1)) runtime.autoRetries = 0
+    runtime.failedAtBytes = runtime.state.bytesDownloaded
+    const minutes = AUTO_RETRY_MINUTES[runtime.autoRetries ?? 0]
+    if (minutes === undefined) return undefined
+    runtime.autoRetries = (runtime.autoRetries ?? 0) + 1
+    this.armRetry(runtime, Date.now() + minutes * testKnobs.autoRetryMinuteMs)
+    return minutes
+  }
+
+  private armRetry(runtime: DownloadRuntime, at: number): void {
+    clearTimeout(runtime.retryTimer)
+    runtime.state.retryAt = at
+    runtime.retryTimer = setTimeout(
+      () => {
+        const { id } = runtime.state
+        if (this.runtimes.get(id) !== runtime) return
+        // A new link being checked resumes it itself. Otherwise retryAt stays until the run
+        // starts (see begin), so it never reads as given up meanwhile.
+        if (this.relinking.has(id)) {
+          this.disarmRetry(runtime)
+          this.pushUpdate(runtime)
+        } else this.resume(id)
+      },
+      Math.max(0, at - Date.now())
+    )
+  }
+
+  /** It runs again, or waits its turn to: nothing left to retry. */
+  private disarmRetry(runtime: DownloadRuntime): void {
+    clearTimeout(runtime.retryTimer)
+    runtime.state.retryAt = undefined
   }
 
   /** The server keeps refusing requests over this network: it stops being used until the user

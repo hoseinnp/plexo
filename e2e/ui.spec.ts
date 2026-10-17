@@ -281,6 +281,28 @@ test.describe('UI journeys @smoke', () => {
     await plexo.page.getByRole('button', { name: `Open ${fileName}` }).click()
     await expect(plexo.page.getByRole('button', { name: /Show in (Finder|folder)/ })).toBeVisible()
   })
+
+  test('a finished file’s checksum is checked against one pasted from the website', async ({
+    plexo,
+    serve
+  }) => {
+    const origin = await serve({ size: SIZE })
+    await plexo.start(origin.url(), origin.sha256)
+    const { fileName } = await plexo.waitForStatus('completed')
+    const page = plexo.page
+    await page.getByRole('button', { name: `Open ${fileName}`, exact: true }).click({
+      button: 'right'
+    })
+    await page.getByRole('menuitem', { name: 'Check checksum' }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText(origin.sha256, { exact: true })).toBeVisible()
+    const pasted = dialog.getByRole('textbox', { name: 'Checksum to compare' })
+    // As websites list them: upper case, spaced out in groups.
+    await pasted.fill(` ${origin.sha256.toUpperCase().replace(/(.{8})/g, '$1 ')} `)
+    await expect(dialog.getByText('Matches the SHA-256: the file is intact.')).toBeVisible()
+    await pasted.fill(origin.sha256.replace(/^./, (c) => (c === '0' ? '1' : '0')))
+    await expect(dialog.getByText(/^Doesn’t match/)).toBeVisible()
+  })
 })
 
 // What a user sets is still set after they reload or restart — checked only through what they see.

@@ -28,6 +28,7 @@ import {
   formatPercent,
   formatWhen,
   isFolder,
+  retryNote,
   sourceOf,
   wantedBytes
 } from '../utils/format'
@@ -541,7 +542,9 @@ const DownloadRow = memo(function DownloadRow({
         detail = wanted > 0 ? `Paused at ${percent}% · ${sizes}` : `Paused · ${sizes}`
         break
       default:
-        detail = describeError(download.error ?? 'Something went wrong')
+        detail = [describeError(download.error ?? 'Something went wrong'), retryNote(download)]
+          .filter(Boolean)
+          .join(' · ')
         tone = 'text-[var(--color-danger)]'
     }
   }

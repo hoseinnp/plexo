@@ -4,6 +4,7 @@ import { useAppStore } from '../store/useAppStore'
 import { describeError } from '../utils/format'
 import type { ActionId, DownloadItem } from '../utils/downloadActions'
 import { ActionErrorDialog } from './ActionErrorDialog'
+import { ChecksumDialog } from './ChecksumDialog'
 import { ACTION_META } from './downloadActionMeta'
 import { ActionsContext, StateContext } from './downloadActionsContext'
 import { FixLinkDialog } from './FixLinkDialog'
@@ -25,6 +26,7 @@ export function DownloadActionsProvider({
     clearAll: boolean
   } | null>(null)
   const [fixing, setFixing] = useState<DownloadState | null>(null)
+  const [checking, setChecking] = useState<DownloadItem | null>(null)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<{ title: string; message: string } | null>(null)
   const [dialogError, setDialogError] = useState<string | null>(null)
@@ -52,6 +54,9 @@ export function DownloadActionsProvider({
         }
         case 'fix':
           setFixing(targets[0] as DownloadState)
+          return true
+        case 'checksum':
+          setChecking(targets[0])
           return true
         case 'again': {
           // Nothing of it can be kept: it goes, and its link waits in New download to start over.
@@ -163,6 +168,9 @@ export function DownloadActionsProvider({
           onConfirm={() => void confirmRemoval()}
         />
         <FixLinkDialog download={fixing} onClose={() => setFixing(null)} />
+        {checking && (
+          <ChecksumDialog key={checking.id} item={checking} onClose={() => setChecking(null)} />
+        )}
         <ActionErrorDialog failure={failure} onClose={() => setFailure(null)} />
       </StateContext.Provider>
     </ActionsContext.Provider>

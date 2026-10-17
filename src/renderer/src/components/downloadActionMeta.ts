@@ -2,6 +2,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  FileCheck,
   FolderOpen,
   ListX,
   Pause,
@@ -89,6 +90,12 @@ export const ACTION_META: Record<ActionId, ActionMeta> = {
     single: true,
     failure: 'Couldn’t show file',
     icon: FolderOpen
+  },
+  checksum: {
+    label: 'Check checksum',
+    single: true,
+    failure: 'Couldn’t check the file',
+    icon: FileCheck
   },
   copy: {
     label: 'Copy link',

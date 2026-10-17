@@ -205,6 +205,8 @@ interface DownloadStateBase {
   /** For an error: whether resuming can pick up where it stopped. False when the progress was
    * thrown away, e.g. the file changed on the server. */
   resumable?: boolean
+  /** For an error: when Plexo tries again on its own (see DownloadManager.scheduleRetry). */
+  retryAt?: number
   startedAt: number
   /** Enrolled in the scheduled queue; survives relaunches until manually paused. */
   scheduled?: boolean
@@ -321,6 +323,13 @@ export interface UpdateState {
 
 /** What the PC does once every download is done (see main/whenDone.ts). */
 export type WhenDone = 'nothing' | 'sleep' | 'shutdown'
+
+/** A finished file's checksums, as hex. */
+export interface FileChecksums {
+  md5: string
+  sha1: string
+  sha256: string
+}
 
 /** A repeating window for all transfers, interpreted in the computer's local timezone. */
 export interface DownloadSchedule {

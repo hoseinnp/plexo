@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   DownloadUpdate,
+  FileChecksums,
   FinishedDownload,
   NetworkInterfaceInfo,
   PendingLink,
@@ -31,6 +32,8 @@ export interface IpcContract {
   /** Opens a download's file (a torrent's folder) with the OS default. False when it's gone or
    * nothing could open it. */
   openDownload: { args: [id: string]; result: boolean }
+  /** A finished download's checksums, read from its own path. Null when it's gone. */
+  checksums: { args: [id: string]; result: FileChecksums | null }
   /** `linkId`: the PendingLink whose browser sign-in it starts with. */
   startDownload: { args: [request: StartDownloadRequest, linkId?: string]; result: string }
   /** Every download, oldest first, each as a snapshot. */

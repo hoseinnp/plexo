@@ -9,6 +9,7 @@ import {
   formatBytes,
   formatPercent,
   isFolder,
+  retryNote,
   wantedBytes
 } from '../utils/format'
 
@@ -21,7 +22,9 @@ export function ErrorScreen({ download }: { download: DownloadState }): React.JS
   const description = cancelled
     ? 'The download was stopped before finishing.'
     : download.error
-      ? describeError(download.error)
+      ? [describeError(download.error), download.retryAt && `${retryNote(download)}.`]
+          .filter(Boolean)
+          .join(' ')
       : 'The download stopped unexpectedly. Try again.'
 
   const handleCopyUrl = async (): Promise<void> => {

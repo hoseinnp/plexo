@@ -37,6 +37,7 @@ const plexoApi = {
   readClipboardText: () => invoke('readClipboardText'),
   revealDownload: (id: string) => invoke('revealDownload', id),
   openDownload: (id: string) => invoke('openDownload', id),
+  checksums: (id: string) => invoke('checksums', id),
   startDownload: (request: IpcContract['startDownload']['args'][0], linkId?: string) =>
     invoke('startDownload', request, linkId),
   listDownloads: () => invoke('listDownloads'),

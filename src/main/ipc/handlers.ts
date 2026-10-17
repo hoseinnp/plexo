@@ -135,7 +135,8 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
         slowMode: settings.slowMode ?? false,
         slowModeSpeed: settings.slowModeSpeed ?? DEFAULT_SLOW_MODE_SPEED,
         speedUnit: settings.speedUnit ?? 'bytes',
-        destinationDir: destinationExists ? destinationDir : undefined
+        destinationDir: destinationExists ? destinationDir : undefined,
+        sortByType: settings.sortByType ?? false
       } satisfies InitialState
     } catch (error) {
       console.error('[plexo] failed to read initial state', error)
@@ -148,7 +149,8 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
         downloadsAtOnce: DOWNLOADS_AT_ONCE.default,
         slowMode: false,
         slowModeSpeed: DEFAULT_SLOW_MODE_SPEED,
-        speedUnit: 'bytes'
+        speedUnit: 'bytes',
+        sortByType: false
       } satisfies InitialState
     }
   })

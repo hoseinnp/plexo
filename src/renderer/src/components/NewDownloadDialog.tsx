@@ -15,7 +15,9 @@ import {
   formatBytes,
   toDisplayPath
 } from '../utils/format'
+import { sortedDir } from '../utils/fileCategory'
 import { Button } from './ui/button'
+import { Checkbox } from './ui/checkbox'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { TorrentFileList } from './TorrentFiles'
@@ -73,6 +75,8 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
   const position = shownLink ? links.indexOf(shownLink) : -1
   const destinationDir = useAppStore((store) => store.destinationDir)
   const setDestinationDir = useAppStore((store) => store.setDestinationDir)
+  const sortByType = useAppStore((store) => store.sortByType)
+  const setSortByType = useAppStore((store) => store.setSortByType)
   const full = useAppStore(
     (store) =>
       Object.values(store.downloads).filter((download) => download.status === 'downloading')
@@ -160,6 +164,15 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
 
   const ready = probe.status === 'ready' ? probe.result : null
   const torrent = ready?.kind === 'torrent' ? ready.torrent : null
+  // Where it really goes: a web download sorted into its type's subfolder, when that's on.
+  const saveDir =
+    sortByType && ready?.kind === 'http'
+      ? sortedDir(
+          destinationDir,
+          fileNameOverride?.trim() || ready.suggestedFileName,
+          window.plexo.platform === 'win32' ? '\\' : '/'
+        )
+      : destinationDir
   const chosenFiles = torrent
     ? torrent.files.flatMap((_, index) => (skippedFiles.includes(index) ? [] : [index]))
     : []
@@ -279,7 +292,7 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
     try {
       const common = {
         url: probe.result.finalUrl,
-        destinationDir,
+        destinationDir: saveDir,
         suggestedFileName: fileNameOverride?.trim() || probe.result.suggestedFileName,
         totalBytes: probe.result.totalBytes ?? 0,
         supportsRanges: multiChunkAllowed,
@@ -509,12 +522,16 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
         <div className="flex items-center gap-3">
           <div className={labelClass}>Save to</div>
           <div className="min-w-0 flex-1 truncate font-mono text-[12.5px]">
-            {toDisplayPath(destinationDir, homeDir)}
+            {toDisplayPath(saveDir, homeDir)}
           </div>
           <Button type="button" variant="secondary" size="sm" onClick={handleBrowse}>
             Change
           </Button>
         </div>
+        <label className="-mt-2 flex items-center gap-2 pl-[76px] text-[12.5px] text-[var(--text-secondary)]">
+          <Checkbox checked={sortByType} onCheckedChange={setSortByType} />
+          Sort into folders by type (Video, Music, Programs…)
+        </label>
 
         <div className="flex items-start gap-3">
           <div className={cn(labelClass, 'pt-1.5')} id="new-download-networks">

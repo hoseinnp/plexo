@@ -343,6 +343,8 @@ export interface AppSettings {
   autoUpdate?: boolean
   /** The last destination folder picked. */
   destinationDir?: string
+  /** Web downloads go into a subfolder by file type (Video, Music, …) of the folder picked. */
+  sortByType?: boolean
   /** User customizations (name/color) per network interface id. */
   networkPreferences?: NetworkPreferences
   /** How many downloads run at once; the rest wait in the queue. */
@@ -381,6 +383,7 @@ export interface InitialState {
   speedUnit: SpeedUnit
   /** The last folder picked, if it still exists — otherwise the renderer uses downloadsDir. */
   destinationDir?: string
+  sortByType: boolean
 }
 
 interface StartDownloadRequestBase {

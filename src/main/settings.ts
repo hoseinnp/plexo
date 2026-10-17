@@ -86,6 +86,7 @@ function sanitizeSettings(parsed: unknown): AppSettings {
   const slowModeSpeed = byteCount(parsed.slowModeSpeed)
   if (slowModeSpeed !== undefined) settings.slowModeSpeed = slowModeSpeed
   if (parsed.slowMode === true) settings.slowMode = true
+  if (parsed.sortByType === true) settings.sortByType = true
   if (parsed.speedUnit === 'bytes' || parsed.speedUnit === 'bits') {
     settings.speedUnit = parsed.speedUnit
   }

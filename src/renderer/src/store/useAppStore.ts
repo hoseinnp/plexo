@@ -66,6 +66,8 @@ interface AppStore {
   startedUrl: string
   /** Persisted — the last folder picked, falling back to downloadsDir. */
   destinationDir: string
+  /** Persisted — web downloads go into a subfolder by type (see utils/fileCategory.ts). */
+  sortByType: boolean
 
   /** Asks the main process for the network list now; it also pushes every change. */
   loadInterfaces: () => Promise<void>
@@ -96,6 +98,7 @@ interface AppStore {
   setSpeedUnit: (unit: SpeedUnit) => void
   setDraftUrl: (url: string) => void
   setDestinationDir: (dir: string) => void
+  setSortByType: (on: boolean) => void
 }
 
 // Settings saved by the main process, read once before the first paint (see InitialState).
@@ -140,6 +143,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   formKey: 0,
   startedUrl: '',
   destinationDir: initial.destinationDir ?? initial.downloadsDir,
+  sortByType: initial.sortByType,
 
   loadInterfaces: async () => {
     // A re-scan keeps showing the last result rather than flashing back to 'loading'.
@@ -273,5 +277,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setDestinationDir: (destinationDir) => {
     set({ destinationDir })
     persist({ destinationDir })
+  },
+  setSortByType: (sortByType) => {
+    set({ sortByType })
+    persist({ sortByType })
   }
 }))

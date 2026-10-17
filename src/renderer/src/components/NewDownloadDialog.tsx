@@ -1,7 +1,7 @@
 import type { ProbeResult } from '@shared/types'
 import { cn } from 'cn'
 import { AlertTriangle, ChevronLeft, ChevronRight, FolderOpen, Globe, Lock, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFormatSpeedLimit } from '../hooks/useFormatSpeed'
 import { useNetworkUsage } from '../hooks/useNetworks'
 import { useNetworkVisuals } from '../hooks/useNetworkVisuals'
@@ -13,9 +13,11 @@ import {
   describeFileCount,
   fileExtensionBadge,
   formatBytes,
+  parseLinks,
   toDisplayPath
 } from '../utils/format'
 import { sortedDir } from '../utils/fileCategory'
+import { BatchDownloadForm, type BatchItem } from './BatchDownloadForm'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
@@ -44,6 +46,23 @@ export function NewDownloadDialog(): React.JSX.Element {
   const open = useAppStore((store) => store.newDownloadOpen)
   const close = useAppStore((store) => store.closeNewDownload)
   const formKey = useAppStore((store) => store.formKey)
+  const batchLinks = useAppStore((store) => store.batchLinks)
+  const links = useAppStore((store) => store.links)
+  const shownId = useAppStore((store) => store.shownId)
+  // Links pasted together, or the browser's sent together, are listed as one batch.
+  const group = links.find((link) => link.id === shownId)?.batch
+  const batch = useMemo((): BatchItem[] | null => {
+    if (batchLinks) return batchLinks.map((url) => ({ key: url, url }))
+    const together = group ? links.filter((link) => link.batch === group) : []
+    return together.length > 1
+      ? together.map((link) => ({
+          key: link.id,
+          url: link.url,
+          linkId: link.id,
+          probe: link.probe
+        }))
+      : null
+  }, [batchLinks, group, links])
 
   return (
     <Dialog open={open} disablePointerDismissal onOpenChange={(next) => !next && close()}>
@@ -53,7 +72,12 @@ export function NewDownloadDialog(): React.JSX.Element {
       >
         {/* Mounted only while open, and keyed by what it shows, so each opening and each
             download stacked in it starts fresh. */}
-        {open && <NewDownloadForm key={formKey} onDone={close} />}
+        {open &&
+          (batch ? (
+            <BatchDownloadForm key={group ?? 'pasted'} items={batch} onDone={close} />
+          ) : (
+            <NewDownloadForm key={formKey} onDone={close} />
+          ))}
       </DialogContent>
     </Dialog>
   )
@@ -113,8 +137,11 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
       .readClipboardText()
       .then((text) => {
         const link = acceptedLink(text)
-        const { draftUrl, startedUrl } = useAppStore.getState()
-        if (link && link !== startedUrl && !draftUrl) setUrl(link)
+        const many = parseLinks(text)
+        const { draftUrl, startedUrl, openBatch, shownId } = useAppStore.getState()
+        if (draftUrl || shownId) return
+        if (many.length > 1 && many.join('\n') !== startedUrl) openBatch(many)
+        else if (link && link !== startedUrl) setUrl(link)
       })
       .catch(() => {})
   }, [setUrl])
@@ -399,7 +426,14 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
               type="text"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              placeholder="Paste a link: https:// or magnet:"
+              onPaste={(event) => {
+                // Several links at once (a season, a game's parts): listed together instead.
+                const many = parseLinks(event.clipboardData.getData('text'))
+                if (many.length < 2) return
+                event.preventDefault()
+                useAppStore.getState().openBatch(many)
+              }}
+              placeholder="Paste a link, or several: https:// or magnet:"
               spellCheck={false}
               aria-label="Link"
               className="min-w-0 flex-1 border-none bg-transparent font-mono text-[13px] text-foreground outline-none"

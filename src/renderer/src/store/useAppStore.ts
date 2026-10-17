@@ -62,8 +62,11 @@ interface AppStore {
   shownId: string | null
   /** Bumped to remount New download's form for another link. */
   formKey: number
-  /** The link last started: still on the clipboard afterwards, so not offered again. */
+  /** The link last started: still on the clipboard afterwards, so not offered again. A batch's
+   * links, one per line. */
   startedUrl: string
+  /** Links pasted together, listed in New download as one batch; null while it shows one link. */
+  batchLinks: string[] | null
   /** Persisted — the last folder picked, falling back to downloadsDir. */
   destinationDir: string
   /** Persisted — web downloads go into a subfolder by type (see utils/fileCategory.ts). */
@@ -83,6 +86,9 @@ interface AppStore {
   setView: (view: View) => void
   /** Opens New download, with `link` in its link field when one is given. */
   openNewDownload: (link?: string) => void
+  /** Opens New download listing `links` as one batch. */
+  openBatch: (links: string[]) => void
+  /** Closes what New download shows: a batch whole, the browser's included. */
   closeNewDownload: () => void
   receiveLinks: () => Promise<void>
   showLink: (id: string) => void
@@ -142,6 +148,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   shownId: null,
   formKey: 0,
   startedUrl: '',
+  batchLinks: null,
   destinationDir: initial.destinationDir ?? initial.downloadsDir,
   sortByType: initial.sortByType,
 
@@ -204,9 +211,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
   openNewDownload: (link) =>
     set(link === undefined ? { newDownloadOpen: true } : { newDownloadOpen: true, draftUrl: link }),
 
+  openBatch: (batchLinks) => set({ batchLinks, newDownloadOpen: true }),
+
   closeNewDownload: () => {
-    const { links, shownId } = get()
-    if (shownId) return get().finishLink(shownId, false)
+    const { links, shownId, batchLinks } = get()
+    if (batchLinks) set({ batchLinks: null, draftUrl: '' })
+    const batch = !batchLinks && links.find((link) => link.id === shownId)?.batch
+    if (batch) {
+      for (const link of links) if (link.batch === batch) get().dropLink(link.id, false)
+      return get().closeNewDownload()
+    }
+    if (shownId && !batchLinks) return get().finishLink(shownId, false)
     if (links.length > 0) return get().showLink(links[links.length - 1].id)
     set({ newDownloadOpen: false })
   },

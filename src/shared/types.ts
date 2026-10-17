@@ -444,6 +444,8 @@ export interface PendingLink {
   signedInTo?: string
   /** A failed download this looks like the same file as, for the user to resume instead. */
   resumes?: { id: string; fileName: string }
+  /** Sent together with the other links that share it (see BridgeAddRequest.batch). */
+  batch?: string
 }
 
 export interface StartTorrentDownloadRequest extends StartDownloadRequestBase {

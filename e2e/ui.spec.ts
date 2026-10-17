@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Locator, Page } from '@playwright/test'
 import { BLOCK, expect, interfacesEnv, NETWORKS, test, treeSha } from './fixtures'
-import { seededBytes } from './origin'
+import { seededBytes, sha256 } from './origin'
 import { named, Swarm, torrentFileOnDisk } from './torrentSwarm'
 
 // G. A handful of journeys through the real UI, to prove the screens are wired to the main
@@ -280,6 +280,42 @@ test.describe('UI journeys @smoke', () => {
     // Listed under Finished; opened, it shows as it did when it finished.
     await plexo.page.getByRole('button', { name: `Open ${fileName}` }).click()
     await expect(plexo.page.getByRole('button', { name: /Show in (Finder|folder)/ })).toBeVisible()
+  })
+
+  test('several links pasted at once start together, into a folder of their own', async ({
+    plexo,
+    serve,
+    dirs
+  }) => {
+    const part1 = await serve({ size: SIZE, seed: 1 })
+    const part2 = await serve({ size: SIZE, seed: 2 })
+    await stubNativeUi(plexo, dirs.dest)
+    const link = await plexo.newDownload()
+    // As copied from a forum post: words and numbering around them, a full stop stuck to one.
+    const text = `Game parts:\n1) ${part1.url('/files/game.part1.rar')}\n2) ${part2.url('/files/game.part2.rar')}.\n`
+    await link.evaluate((input, pasted) => {
+      const data = new DataTransfer()
+      data.setData('text/plain', pasted)
+      input.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
+      )
+    }, text)
+    const dialog = plexo.page.getByRole('dialog')
+    await expect(dialog.getByText('game.part1.rar', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('game.part2.rar', { exact: true })).toBeVisible()
+    await dialog.getByRole('button', { name: 'Change' }).click()
+    await dialog.getByRole('textbox', { name: 'Folder' }).fill('My Game')
+    await dialog.getByRole('button', { name: 'Download 2', exact: true }).click()
+    await expect(dialog).toBeHidden()
+
+    await expect
+      .poll(async () => (await plexo.all()).filter((s) => s.status === 'completed').length, {
+        timeout: 30_000
+      })
+      .toBe(2)
+    const folder = join(dirs.dest, 'My Game')
+    expect(sha256(await readFile(join(folder, 'game.part1.rar')))).toBe(part1.sha256)
+    expect(sha256(await readFile(join(folder, 'game.part2.rar')))).toBe(part2.sha256)
   })
 
   test('a finished file’s checksum is checked against one pasted from the website', async ({

@@ -4,6 +4,7 @@ import { browserContext, confirm, reach, send, storeOf, wake, type Reach } from 
 import { excluded, loadSettings } from './settings'
 
 const MENU_ID = 'download-with-plexo'
+const SELECTION_MENU_ID = 'download-selected-with-plexo'
 // Plexo can't tell the extension it has quit, so the toolbar icon checks on a timer.
 const CHECK_ALARM = 'check-plexo'
 
@@ -84,6 +85,17 @@ if (determining) {
   api.downloads.onCreated.addListener((item) => void capture(item))
 }
 
+/** A link the user chose, with the page's sign-in for it. */
+async function linkRequest(
+  url: string,
+  tab: chrome.tabs.Tab | undefined,
+  pageUrl: string | undefined
+): Promise<BridgeAddRequest> {
+  return /^magnet:/i.test(url)
+    ? { url }
+    : { url, browser: await browserContext([url], tab && storeOf(tab), pageUrl), pageUrl }
+}
+
 /** Sent whatever the settings say, and Plexo is started if needed: the user asked for it. */
 async function sendLink(
   info: chrome.contextMenus.OnClickData,
@@ -91,17 +103,84 @@ async function sendLink(
 ): Promise<void> {
   const url = info.linkUrl
   if (!url) return
-  const request: BridgeAddRequest = /^magnet:/i.test(url)
-    ? { url }
-    : {
-        url,
-        browser: await browserContext([url], tab && storeOf(tab), info.pageUrl),
-        pageUrl: info.pageUrl
-      }
+  const request = await linkRequest(url, tab, info.pageUrl)
   let sent = await send(request)
   if (sent === 'closed' && (await wake())) sent = await send(request)
   // No browser copy to cancel first.
   const shown = typeof sent !== 'string' && (await confirm(sent))
+  await showState(shown ? 'ok' : undefined)
+}
+
+/** Every link in what's selected on the page, in page order: the links the selection touches, and
+ * any written out as text. Runs in the page, so it can use nothing from here. */
+function selectedLinks(): string[] {
+  const selection = getSelection()
+  if (!selection) return []
+  const links: string[] = []
+  for (let i = 0; i < selection.rangeCount; i++) {
+    const range = selection.getRangeAt(i)
+    const root = range.commonAncestorContainer
+    const scope = root instanceof Element ? root : root.parentElement
+    const inside = scope?.closest('a[href]')
+    const anchors = inside ? [inside] : [...(scope?.querySelectorAll('a[href]') ?? [])]
+    for (const anchor of anchors) {
+      if (range.intersectsNode(anchor)) links.push((anchor as HTMLAnchorElement).href)
+    }
+  }
+  links.push(...(selection.toString().match(/(?:https?:\/\/|magnet:\?)[^\s"'<>]+/gi) ?? []))
+  return links
+}
+
+/** Runs `run` on each of `items`, at most `limit` at a time, starting them in order. */
+function limited<T, R>(items: T[], limit: number, run: (item: T) => Promise<R>): Promise<R>[] {
+  let free = limit
+  const waiting: (() => void)[] = []
+  const release = (): void => {
+    const next = waiting.shift()
+    if (next) next()
+    else free++
+  }
+  return items.map(async (item) => {
+    if (free > 0) free--
+    else await new Promise<void>((resolve) => waiting.push(resolve))
+    try {
+      return await run(item)
+    } finally {
+      release()
+    }
+  })
+}
+
+/** Sends every link in the selection as one batch, which New download lists together (a season,
+ * a game's parts). Like sendLink, whatever the settings say. */
+async function sendSelection(
+  info: chrome.contextMenus.OnClickData,
+  tab?: chrome.tabs.Tab
+): Promise<void> {
+  if (tab?.id === undefined) return
+  const results = await api.scripting
+    .executeScript({
+      target: { tabId: tab.id, frameIds: [info.frameId ?? 0] },
+      func: selectedLinks
+    })
+    .catch(() => [])
+  const found = results.flatMap((result) => (result.result as string[] | undefined) ?? [])
+  const urls = [...new Set(found.map((link) => link.replace(/[.,;:!?)\]}]+$/, '')))].filter(
+    (link) => /^(https?:\/\/|magnet:\?)/i.test(link)
+  )
+  if (urls.length === 0) return
+  if ((await reach()) !== 'ok' && !(await wake())) return showState('closed')
+  const batch = crypto.randomUUID()
+  // Plexo looks each one up before it answers, so a few at a time; each is confirmed in page
+  // order as soon as it can be, well inside the time Plexo holds an answer for.
+  const sent = limited(urls, 4, async (url) =>
+    send({ ...(await linkRequest(url, tab, info.pageUrl)), batch })
+  )
+  let shown = false
+  for (const handoff of sent) {
+    const answer = await handoff
+    if (typeof answer !== 'string' && (await confirm(answer))) shown = true
+  }
   await showState(shown ? 'ok' : undefined)
 }
 
@@ -113,11 +192,14 @@ function setUp(): void {
 }
 
 function createMenu(): void {
-  void api.contextMenus
-    .removeAll()
-    .then(() =>
-      api.contextMenus.create({ id: MENU_ID, title: 'Download with Plexo', contexts: ['link'] })
-    )
+  void api.contextMenus.removeAll().then(() => {
+    api.contextMenus.create({ id: MENU_ID, title: 'Download with Plexo', contexts: ['link'] })
+    api.contextMenus.create({
+      id: SELECTION_MENU_ID,
+      title: 'Download selected links with Plexo',
+      contexts: ['selection']
+    })
+  })
 }
 
 api.runtime.onInstalled.addListener(setUp)
@@ -127,6 +209,7 @@ api.alarms.onAlarm.addListener((alarm) => {
 })
 api.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === MENU_ID) void sendLink(info, tab)
+  if (info.menuItemId === SELECTION_MENU_ID) void sendSelection(info, tab)
 })
 api.tabs.onCreated.addListener((tab) => {
   if (tab.id !== undefined) openedAt.set(tab.id, Date.now())

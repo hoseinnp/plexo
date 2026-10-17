@@ -35,10 +35,31 @@ export function fileCategory(fileName: string): string | undefined {
   return dot > 0 ? BY_EXTENSION.get(fileName.slice(dot + 1).toLowerCase()) : undefined
 }
 
+/** A folder name typed by the user, made safe on every OS: no path separators or characters
+ * Windows refuses, and no trailing dots or spaces. '' when nothing usable is left. */
+export function folderName(typed: string): string {
+  // eslint-disable-next-line no-control-regex -- control characters are refused too
+  const cleaned = typed.replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ').replace(/[. ]+$/, '')
+  return cleaned.trim().replace(/\s+/g, ' ')
+}
+
 /** `dir` with `fileName`'s subfolder added, unless it has none or `dir` already is that folder. */
 export function sortedDir(dir: string, fileName: string, separator: string): string {
   const folder = fileCategory(fileName)
   const last = dir.split(/[\\/]/).filter(Boolean).pop()
   if (!folder || last?.toLowerCase() === folder.toLowerCase()) return dir
   return `${dir.replace(/[\\/]+$/, '')}${separator}${folder}`
+}
+
+/** Where one file of a batch goes. With a folder for the batch, every file goes into it together
+ * (sorted, by the type of the batch's first file, as a whole); without, each is sorted on its own. */
+export function batchDir(
+  dir: string,
+  fileName: string,
+  options: { folder: string; sort: boolean; first: string; separator: string }
+): string {
+  const { folder, sort, first, separator } = options
+  if (!folder) return sort ? sortedDir(dir, fileName, separator) : dir
+  const base = sort ? sortedDir(dir, first, separator) : dir
+  return `${base.replace(/[\\/]+$/, '')}${separator}${folder}`
 }

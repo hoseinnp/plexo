@@ -4,8 +4,10 @@ import {
   formatEta,
   formatPercent,
   formatSpeed,
+  parseLinks,
   speedTicks
 } from '../src/renderer/src/utils/format'
+import { batchDir, folderName } from '../src/renderer/src/utils/fileCategory'
 
 const GiB = 1024 ** 3
 const MiB = 1024 ** 2
@@ -40,5 +42,41 @@ test.describe('formatting @smoke', () => {
     expect(formatEta(59.01)).toBe('1m 0s')
     expect(formatEta(59.5)).toBe('1m 0s')
     expect(formatEta(61)).toBe('1m 1s')
+  })
+})
+
+test.describe('links pasted together @smoke', () => {
+  test('every link in the text, in order and once, without what is stuck to it', () => {
+    const text = [
+      'Season 2:',
+      '1) https://cdn.example.com/s02e01.mkv,',
+      '(https://cdn.example.com/s02e02.mkv)',
+      '"https://cdn.example.com/s02e03.mkv"',
+      'mirror https://cdn.example.com/s02e01.mkv',
+      'magnet:?xt=urn:btih:abc&dn=extras.'
+    ].join('\n')
+    expect(parseLinks(text)).toEqual([
+      'https://cdn.example.com/s02e01.mkv',
+      'https://cdn.example.com/s02e02.mkv',
+      'https://cdn.example.com/s02e03.mkv',
+      'magnet:?xt=urn:btih:abc&dn=extras'
+    ])
+    expect(parseLinks('nothing here')).toEqual([])
+  })
+
+  test('a folder name is safe on every OS', () => {
+    expect(folderName('  Season  2 ')).toBe('Season 2')
+    expect(folderName('Game: Part 1/2?')).toBe('Game Part 1 2')
+    expect(folderName('..')).toBe('')
+    expect(folderName('trailing. . ')).toBe('trailing')
+  })
+
+  test('with a folder the batch stays together; without, each file is sorted on its own', () => {
+    const at = (fileName: string, folder: string, sort: boolean): string =>
+      batchDir('/d', fileName, { folder, sort, first: 'game.part1.rar', separator: '/' })
+    expect(at('setup.exe', 'Game', true)).toBe('/d/Archives/Game')
+    expect(at('setup.exe', 'Game', false)).toBe('/d/Game')
+    expect(at('setup.exe', '', true)).toBe('/d/Programs')
+    expect(at('setup.exe', '', false)).toBe('/d')
   })
 })

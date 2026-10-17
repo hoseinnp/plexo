@@ -26,6 +26,9 @@ export interface BridgeAddRequest {
   minBytes?: number
   /** The name the browser picked: only it saw a link's download attribute. */
   fileName?: string
+  /** Shared by links sent together (Download selected links): New download lists them as one
+   * batch. */
+  batch?: string
 }
 
 /** Plexo shows the download only once POST /confirm brings this back: the extension confirms

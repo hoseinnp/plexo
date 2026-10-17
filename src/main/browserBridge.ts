@@ -152,7 +152,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 
 function addRequestFrom(body: unknown): BridgeAddRequest | null {
   if (typeof body !== 'object' || body === null) return null
-  const { url, browser, pageUrl, minBytes, fileName } = body as Record<string, unknown>
+  const { url, browser, pageUrl, minBytes, fileName, batch } = body as Record<string, unknown>
   if (typeof url !== 'string' || url.length > 8192 || !/^(https?:\/\/|magnet:\?)/i.test(url)) {
     return null
   }
@@ -169,12 +169,16 @@ function addRequestFrom(body: unknown): BridgeAddRequest | null {
   ) {
     return null
   }
+  if (batch !== undefined && !(typeof batch === 'string' && /^[\w-]{1,64}$/.test(batch))) {
+    return null
+  }
   return {
     url,
     browser: context,
     pageUrl: pageUrl as string | undefined,
     minBytes: minBytes as number | undefined,
-    fileName: fileName as string | undefined
+    fileName: fileName as string | undefined,
+    batch: batch as string | undefined
   }
 }
 
@@ -215,7 +219,7 @@ async function add(
   }
 
   // A magnet link has nothing to check here: New download looks it up.
-  if (/^magnet:/i.test(request.url)) return hold({ url: request.url })
+  if (/^magnet:/i.test(request.url)) return hold({ url: request.url, batch: request.batch })
 
   const gone = new Promise<void>((resolve) =>
     res.once('close', () => !res.writableFinished && resolve())
@@ -243,7 +247,8 @@ async function add(
     browser: request.browser,
     from: request.browser?.name,
     signedInTo: signedInTo(request, probe),
-    resumes: probe.kind === 'http' ? host.manager.failedMatch(probe) : undefined
+    resumes: probe.kind === 'http' ? host.manager.failedMatch(probe) : undefined,
+    batch: request.batch
   })
 }
 

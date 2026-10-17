@@ -193,6 +193,13 @@ export function acceptedLink(text: string): string | null {
   return null
 }
 
+/** Every web or magnet link in pasted text, in order and once each. Text around them (a forum
+ * post, a list with numbers) is ignored, and so is punctuation stuck to their end. */
+export function parseLinks(text: string): string[] {
+  const found = text.match(/(?:https?:\/\/|magnet:\?)[^\s"'<>]+/gi) ?? []
+  return [...new Set(found.map((link) => link.replace(/[.,;:!?)\]}]+$/, '')))]
+}
+
 /** Where a link's download comes from, in a word: its host. */
 export function sourceOf(url: string): string {
   try {

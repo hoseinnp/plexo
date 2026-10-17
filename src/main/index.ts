@@ -25,6 +25,25 @@ let mainWindow: BrowserWindow | null = null
 let downloadManager: DownloadManager | null = null
 let quitAfterSuspending = false
 let tray: Tray | null = null
+/** Set once the app is really quitting, so closing the window no longer just hides it. */
+let quitting = false
+/** Personal build: on Windows and Linux, closing the window keeps Plexo in the tray, as FDM does.
+ * Not under e2e, whose tests expect a closed window to quit. */
+const closesToTray = process.platform !== 'darwin' && !testKnobs.userDataDir
+
+function showTray(): void {
+  if (tray) return
+  tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 16, height: 16 }))
+  tray.setToolTip('Plexo')
+  tray.on('click', () => bringForward(ensureWindow()))
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open Plexo', click: () => bringForward(ensureWindow()) },
+      { type: 'separator' },
+      { label: 'Quit Plexo', click: () => app.quit() }
+    ])
+  )
+}
 
 /** Only once the app is ready. */
 function ensureWindow(): BrowserWindow {
@@ -103,6 +122,17 @@ function createWindow(): void {
     if (!testKnobs.hideWindow) mainWindow?.show()
   })
 
+  mainWindow.on('close', (event) => {
+    if (!closesToTray || quitting) return
+    event.preventDefault()
+    mainWindow?.hide()
+    showTray()
+  })
+  // Windows logging off or shutting down: let the window close.
+  mainWindow.on('session-end', () => {
+    quitting = true
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -175,6 +205,7 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+  if (closesToTray) showTray()
   if (testKnobs.hideWindow) app.dock?.hide()
   // Personal build: no auto-update, the official releases would replace this build.
 
@@ -184,6 +215,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', (event) => {
+  quitting = true
   if (quitAfterSuspending || !downloadManager) return
 
   event.preventDefault()
@@ -204,15 +236,5 @@ app.on('window-all-closed', () => {
   if (process.platform === 'darwin') return
   if (!keepsRunningForBrowser()) return app.quit()
   // Kept running in the tray, so the browser extension can still reach it.
-  if (tray) return
-  tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 16, height: 16 }))
-  tray.setToolTip('Plexo')
-  tray.on('click', () => bringForward(ensureWindow()))
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Open Plexo', click: () => bringForward(ensureWindow()) },
-      { type: 'separator' },
-      { label: 'Quit Plexo', click: () => app.quit() }
-    ])
-  )
+  showTray()
 })

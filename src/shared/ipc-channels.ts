@@ -38,5 +38,8 @@ export const IpcChannels = {
   showUpdateMenu: 'update:show-menu',
   whenDone: 'when-done:get',
   whenDoneChanged: 'when-done:changed',
-  showWhenDoneMenu: 'when-done:show-menu'
+  showWhenDoneMenu: 'when-done:show-menu',
+  stopTimer: 'stop-timer:get',
+  setStopTimer: 'stop-timer:set',
+  stopTimerChanged: 'stop-timer:changed'
 } as const

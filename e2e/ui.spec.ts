@@ -316,6 +316,70 @@ test.describe('UI journeys @smoke', () => {
     const folder = join(dirs.dest, 'My Game')
     expect(sha256(await readFile(join(folder, 'game.part1.rar')))).toBe(part1.sha256)
     expect(sha256(await readFile(join(folder, 'game.part2.rar')))).toBe(part2.sha256)
+    // Listed as the folder it was named, not as two rows.
+    await expect(
+      plexo.page.getByRole('button', { name: 'Open My Game', exact: true })
+    ).toBeVisible()
+    await expect(plexo.page.getByRole('button', { name: 'Open game.part1.rar' })).toHaveCount(0)
+  })
+
+  test('a batch added paused is one folder that opens to its files and resumes together', async ({
+    plexo,
+    serve,
+    dirs
+  }) => {
+    const part1 = await serve({ size: SIZE, seed: 3 })
+    const part2 = await serve({ size: SIZE, seed: 4 })
+    await stubNativeUi(plexo, dirs.dest)
+    const link = await plexo.newDownload()
+    const text = `${part1.url('/files/game.part1.rar')}\n${part2.url('/files/game.part2.rar')}`
+    await link.evaluate((input, pasted) => {
+      const data = new DataTransfer()
+      data.setData('text/plain', pasted)
+      input.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
+      )
+    }, text)
+    const page = plexo.page
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText('game.part2.rar', { exact: true })).toBeVisible()
+    await dialog.getByRole('button', { name: 'Change' }).click()
+    await dialog.getByText('Don’t start yet').click()
+    await dialog.getByRole('button', { name: 'Add 2 paused', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    await expect
+      .poll(async () => (await plexo.all()).map((state) => state.status))
+      .toEqual(['paused', 'paused'])
+
+    // One row, named by what the files share; opened, it lists both, and Back returns.
+    await page.getByRole('button', { name: 'Open game', exact: true }).click()
+    await expect(
+      page.getByRole('button', { name: 'Open game.part1.rar', exact: true })
+    ).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Open game.part2.rar', exact: true })
+    ).toBeVisible()
+    await page.getByRole('button', { name: 'game', exact: true }).click()
+    await page.getByRole('button', { name: 'Resume all in game', exact: true }).click()
+    await expect
+      .poll(async () => (await plexo.all()).filter((s) => s.status === 'completed').length, {
+        timeout: 30_000
+      })
+      .toBe(2)
+  })
+
+  test('the stop timer pauses what is downloading when it runs out', async ({ plexo, serve }) => {
+    const origin = await serve({ size: SIZE })
+    const held = origin.hold(4 * BLOCK)
+    await plexo.start(origin.url(), origin.sha256)
+    await held
+    await plexo.api.setStopTimer(Date.now() + 500)
+    await expect(
+      plexo.page.getByRole('button', { name: /^Schedule and stop timer: pauses at/ })
+    ).toBeVisible()
+    await plexo.waitForStatus('paused')
+    origin.release()
+    expect(await plexo.api.stopTimer()).toBeNull()
   })
 
   test('a finished file’s checksum is checked against one pasted from the website', async ({

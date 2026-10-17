@@ -17,7 +17,7 @@ import {
   toDisplayPath
 } from '../utils/format'
 import { sortedDir } from '../utils/fileCategory'
-import { BatchDownloadForm, type BatchItem } from './BatchDownloadForm'
+import { BatchDownloadForm, DontStartYet, type BatchItem } from './BatchDownloadForm'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
@@ -128,6 +128,7 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
   const [skippedFiles, setSkippedFiles] = useState<number[]>([])
   // For this download only: the next one starts on Auto again.
   const [streamsChoice, setStreamsChoice] = useState<StreamsChoice>('auto')
+  const [addPaused, setAddPaused] = useState(false)
 
   // Opened with nothing in it: a link on the clipboard is most likely what it's for, as download
   // managers have long assumed. Anything else on the clipboard is left alone.
@@ -240,11 +241,13 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
     ? 'Starting'
     : probe.status === 'probing'
       ? 'Checking'
-      : scheduledWait
-        ? 'Add to scheduled queue'
-        : full
-          ? 'Add to queue'
-          : 'Download'
+      : addPaused
+        ? 'Add paused'
+        : scheduledWait
+          ? 'Add to scheduled queue'
+          : full
+            ? 'Add to queue'
+            : 'Download'
 
   // Two networks on one subnet: the OS sends both down one route, so there's nothing to combine.
   let subnetConflict: { subnet: string; names: string[] } | null = null
@@ -325,7 +328,8 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
         supportsRanges: multiChunkAllowed,
         interfaceIds: selectedInterfaceIds,
         etag: probe.result.etag,
-        lastModified: probe.result.lastModified
+        lastModified: probe.result.lastModified,
+        paused: addPaused || undefined
       }
       const id = await window.plexo.startDownload(
         probe.result.kind === 'torrent'
@@ -356,7 +360,7 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
       // screen opens, unless it was only added to the queue.
       useAppStore.setState({
         startedUrl: url.trim(),
-        ...(full || scheduledWait ? {} : { view: { name: 'download', id } as const })
+        ...(full || scheduledWait || addPaused ? {} : { view: { name: 'download', id } as const })
       })
       if (linkId) {
         finishLink(linkId, true)
@@ -682,6 +686,7 @@ function NewDownloadForm({ onDone }: { onDone: () => void }): React.JSX.Element 
       </div>
 
       <div className="flex items-center gap-2 border-t-[0.5px] border-border px-4 py-2">
+        <DontStartYet checked={addPaused} onChange={setAddPaused} />
         {startError ? (
           <div className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-danger)]">
             {startError}

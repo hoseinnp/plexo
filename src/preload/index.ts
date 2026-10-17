@@ -61,6 +61,8 @@ const plexoApi = {
   showUpdateMenu: () => invoke('showUpdateMenu'),
   whenDone: () => invoke('whenDone'),
   showWhenDoneMenu: () => invoke('showWhenDoneMenu'),
+  stopTimer: () => invoke('stopTimer'),
+  setStopTimer: (at: number | null) => invoke('setStopTimer', at),
   pendingLinks: () => invoke('pendingLinks'),
   resumeFromLink: (linkId: string, downloadId: string) =>
     invoke('resumeFromLink', linkId, downloadId),
@@ -96,6 +98,12 @@ const plexoApi = {
     const listener = (_event: IpcRendererEvent, choice: WhenDone): void => callback(choice)
     ipcRenderer.on(IpcChannels.whenDoneChanged, listener)
     return () => ipcRenderer.removeListener(IpcChannels.whenDoneChanged, listener)
+  },
+
+  onStopTimer: (callback: (at: number | null) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, at: number | null): void => callback(at)
+    ipcRenderer.on(IpcChannels.stopTimerChanged, listener)
+    return () => ipcRenderer.removeListener(IpcChannels.stopTimerChanged, listener)
   },
 
   onNetworksChanged: (callback: (networks: NetworkInterfaceInfo[]) => void): (() => void) => {

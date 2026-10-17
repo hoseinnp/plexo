@@ -6,11 +6,35 @@ import { useNetworkUsage } from '../hooks/useNetworks'
 import { useNetworkVisuals } from '../hooks/useNetworkVisuals'
 import { useAppStore } from '../store/useAppStore'
 import { batchDir, folderName } from '../utils/fileCategory'
-import { describeError, fileExtensionBadge, formatBytes, toDisplayPath } from '../utils/format'
+import {
+  batchName,
+  describeError,
+  fileExtensionBadge,
+  formatBytes,
+  toDisplayPath
+} from '../utils/format'
+import { TypeIcon } from './TypeIcon'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { DialogTitle } from './ui/dialog'
 import { Input } from './ui/input'
+
+/** Adds the download(s) paused, to be resumed later, instead of starting them. New download's
+ * footer has it, for one link and for a batch. */
+export function DontStartYet({
+  checked,
+  onChange
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+}): React.JSX.Element {
+  return (
+    <label className="flex shrink-0 items-center gap-2 pl-1 text-[12.5px] text-[var(--text-secondary)]">
+      <Checkbox checked={checked} onCheckedChange={onChange} />
+      Don’t start yet
+    </label>
+  )
+}
 
 /** One link of a batch: pasted (no linkId), or handed over by the browser with its sign-in. */
 export interface BatchItem {
@@ -56,6 +80,7 @@ export function BatchDownloadForm({
   const [freeBytes, setFreeBytes] = useState<number | null>(null)
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
+  const [addPaused, setAddPaused] = useState(false)
   const asked = useRef(new Set<string>())
 
   // Links the browser already looked up keep that answer: asking again could spend a one-use link.
@@ -133,7 +158,9 @@ export function BatchDownloadForm({
     ? 'Starting'
     : chosen.length === 0 && probing
       ? 'Checking'
-      : `Download ${chosen.length}`
+      : addPaused
+        ? `Add ${chosen.length} paused`
+        : `Download ${chosen.length}`
 
   const handleBrowse = async (): Promise<void> => {
     const picked = await window.plexo.chooseDestinationFolder(destinationDir)
@@ -147,6 +174,14 @@ export function BatchDownloadForm({
     const ids = networks.map((iface) => iface.id)
     const started = new Set<string>()
     let failure: unknown
+    // Listed as one folder, named as the user named it or by what the files share.
+    const batch =
+      chosen.length > 1
+        ? {
+            id: crypto.randomUUID(),
+            name: subfolder || batchName(chosen.map(({ result }) => result.suggestedFileName))
+          }
+        : undefined
     // One at a time, so they queue in the order listed: part 1 before part 2.
     for (const { item, result } of chosen) {
       const splittable = result.supportsRanges && result.totalBytes !== null
@@ -158,7 +193,9 @@ export function BatchDownloadForm({
         supportsRanges: splittable,
         interfaceIds: splittable ? ids : ids.slice(0, 1),
         etag: result.etag,
-        lastModified: result.lastModified
+        lastModified: result.lastModified,
+        batch,
+        paused: addPaused || undefined
       }
       try {
         await window.plexo.startDownload(
@@ -233,13 +270,16 @@ export function BatchDownloadForm({
                     : fileExtensionBadge(name)}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div
-                    className={cn(
-                      'truncate text-[13px]',
-                      check.status === 'ready' ? 'font-medium' : 'font-mono text-muted-foreground'
-                    )}
-                  >
-                    {name}
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <div
+                      className={cn(
+                        'truncate text-[13px]',
+                        check.status === 'ready' ? 'font-medium' : 'font-mono text-muted-foreground'
+                      )}
+                    >
+                      {name}
+                    </div>
+                    {check.status === 'ready' && <TypeIcon fileName={name} />}
                   </div>
                   <div
                     className={cn(
@@ -321,6 +361,7 @@ export function BatchDownloadForm({
       </div>
 
       <div className="flex items-center gap-2 border-t-[0.5px] border-border px-4 py-2">
+        <DontStartYet checked={addPaused} onChange={setAddPaused} />
         {startError ? (
           <div className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--color-danger)]">
             {startError}

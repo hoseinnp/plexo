@@ -27,6 +27,7 @@ import { NetworkMonitor } from '../network/interfaces'
 import { loadSettings, saveSettings } from '../settings'
 import { showUpdateMenu, updateState } from '../updater'
 import { showWhenDoneMenu, startWhenDone, whenDone } from '../whenDone'
+import { setStopTimer, startStopTimer, stopTimer } from '../stopTimer'
 
 async function openNetworkSettings(): Promise<void> {
   if (process.platform === 'win32') {
@@ -254,6 +255,9 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
   startWhenDone(getWindow)
   handle('whenDone', () => whenDone())
   handle('showWhenDoneMenu', () => showWhenDoneMenu())
+  startStopTimer(getWindow, () => manager.pauseAll())
+  handle('stopTimer', () => stopTimer())
+  handle('setStopTimer', (_event, at) => setStopTimer(at))
 
   return manager
 }

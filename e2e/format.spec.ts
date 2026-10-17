@@ -3,6 +3,7 @@ import {
   formatBytes,
   formatEta,
   formatPercent,
+  batchName,
   formatSpeed,
   parseLinks,
   speedTicks
@@ -78,5 +79,17 @@ test.describe('links pasted together @smoke', () => {
     expect(at('setup.exe', 'Game', false)).toBe('/d/Game')
     expect(at('setup.exe', '', true)).toBe('/d/Programs')
     expect(at('setup.exe', '', false)).toBe('/d')
+  })
+})
+
+test.describe('a batch’s name @smoke', () => {
+  test('is what its files’ names share, as whole words', () => {
+    const episode = (n: number): string =>
+      `The.Sopranos.S04E${String(n).padStart(2, '0')}.1080p.10bit.x265.mkv`
+    expect(batchName([episode(1), episode(2), episode(13)])).toBe('The Sopranos S04')
+    expect(batchName(['Show.S01E01.mkv', 'Show.S01E10.mkv'])).toBe('Show S01')
+    expect(batchName(['game.part1.rar', 'game.part2.rar'])).toBe('game')
+    expect(batchName(['Movie_Part_1.mkv', 'Movie_Part_2.mkv'])).toBe('Movie Part')
+    expect(batchName(['a.zip', 'b.zip'])).toBe('2 downloads')
   })
 })

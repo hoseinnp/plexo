@@ -200,6 +200,29 @@ export function parseLinks(text: string): string[] {
   return [...new Set(found.map((link) => link.replace(/[.,;:!?)\]}]+$/, '')))]
 }
 
+/** A name for files downloaded together, from what their names share: "The Sopranos S04" for
+ * The.Sopranos.S04E01….mkv and The.Sopranos.S04E02….mkv. "N downloads" when they share nothing. */
+export function batchName(fileNames: string[]): string {
+  let shared = fileNames[0] ?? ''
+  for (const name of fileNames.slice(1)) {
+    let i = 0
+    while (i < shared.length && shared[i] === name[i]) i++
+    shared = shared.slice(0, i)
+  }
+  // A season's episodes share "S04E0": the season is the name.
+  const season = shared.replace(/(S\d+)E\d*$/i, '$1')
+  // Otherwise back to a whole word: "game.part" for game.part1.rar and game.part2.rar is "game".
+  const whole =
+    season !== shared ||
+    fileNames.every((name) => name.length === shared.length || /[\s._-]/.test(name[shared.length]))
+  const cut = shared.search(/[\s._-][^\s._-]*$/)
+  const words = (whole ? season : cut > 0 ? shared.slice(0, cut) : '')
+    .replace(/[._]+/g, ' ')
+    .replace(/[\s-]+$/, '')
+    .trim()
+  return words.length >= 3 ? words : `${fileNames.length} downloads`
+}
+
 /** Where a link's download comes from, in a word: its host. */
 export function sourceOf(url: string): string {
   try {

@@ -141,7 +141,10 @@ test('schedule dialog saves, cancels edits, validates times, and restores settin
   plexo
 }, testInfo) => {
   const page = plexo.page
-  const indicator = page.getByRole('button', { name: 'Download schedule enabled', exact: true })
+  const indicator = page.getByRole('button', {
+    name: 'Schedule and stop timer: schedule on',
+    exact: true
+  })
   await expect(indicator).toBeHidden()
   await openSchedule(plexo)
   const dialog = page.getByRole('dialog', { name: 'Speed & data limits' })
@@ -179,7 +182,9 @@ test('schedule dialog saves, cancels edits, validates times, and restores settin
   await expect(dialog).toBeHidden()
   await expect(indicator).toBeVisible()
   await page.screenshot({ path: '/tmp/plexo-schedule-toolbar.png' })
+  // The clock opens a popover; its Edit goes to the schedule.
   await indicator.click()
+  await page.getByRole('button', { name: 'Edit…', exact: true }).click()
   await expect(dialog.getByRole('switch', { name: 'Enable download schedule' })).toBeFocused()
   await expect(dialog.getByRole('region', { name: 'Download schedule' })).toBeInViewport()
   await expect(dialog.getByRole('button', { name: 'End date', exact: true })).toBeInViewport({
@@ -214,7 +219,7 @@ test('schedule dialog saves, cancels edits, validates times, and restores settin
   await restored.getByRole('switch', { name: 'Enable download schedule' }).uncheck()
   await restored.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(
-    plexo.page.getByRole('button', { name: 'Download schedule enabled', exact: true })
+    plexo.page.getByRole('button', { name: 'Schedule and stop timer: schedule on', exact: true })
   ).toBeHidden()
 })
 

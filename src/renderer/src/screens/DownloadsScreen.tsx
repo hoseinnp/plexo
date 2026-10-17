@@ -1,5 +1,5 @@
-import type { DownloadState, FinishedDownload } from '@shared/types'
-import { ChevronRight, Plus, Search, X } from 'lucide-react'
+import type { DownloadBatch, DownloadState, FinishedDownload } from '@shared/types'
+import { ChevronLeft, ChevronRight, Folder as FolderIcon, Plus, Search, X } from 'lucide-react'
 import { cn } from 'cn'
 import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react'
 import { DownloadContextMenu } from '../components/DownloadContextMenu'
@@ -14,6 +14,7 @@ import { networkStatusText } from '../components/NetworkRow'
 import { scheduleMessage, scheduleWindow } from '@shared/downloadSchedule'
 import { NetworksMenu } from '../components/NetworksMenu'
 import { TorrentBadge } from '../components/TorrentBadge'
+import { TypeIcon } from '../components/TypeIcon'
 import { Button } from '../components/ui/button'
 import { Checkbox } from '../components/ui/checkbox'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group'
@@ -35,6 +36,8 @@ import {
 import { useFormatSpeed } from '../hooks/useFormatSpeed'
 import {
   availableActions,
+  isDone,
+  isFailed,
   isFinished,
   rowAction,
   splitToolbar,
@@ -43,9 +46,22 @@ import {
 
 type Item = DownloadState | FinishedDownload
 
+/** Downloads started together, listed as one row (see FolderRow). */
+interface Folder {
+  kind: 'batch'
+  batch: DownloadBatch
+  members: Item[]
+}
+
+type Entry = Item | Folder
+
+const isFolderEntry = (entry: Entry): entry is Folder => entry.kind === 'batch'
+/** The downloads an entry stands for: a folder's, or the one. */
+const membersOf = (entry: Entry): Item[] => (isFolderEntry(entry) ? entry.members : [entry])
+
 interface Group {
   label: string
-  items: Item[]
+  items: Entry[]
 }
 
 function filterOf(item: Item): Exclude<DownloadFilter, 'all'> {
@@ -53,20 +69,41 @@ function filterOf(item: Item): Exclude<DownloadFilter, 'all'> {
   return item.status === 'error' ? 'failed' : 'progress'
 }
 
-function groupsOf(downloads: DownloadState[], history: FinishedDownload[]): Group[] {
-  const byStatus = (status: DownloadState['status']): DownloadState[] =>
-    downloads.filter((download) => download.status === status)
-  return [
-    { label: 'Downloading', items: byStatus('downloading') },
-    {
-      label: 'Queued',
-      items: byStatus('queued').sort((a, b) => (a.queuedAt ?? 0) - (b.queuedAt ?? 0))
-    },
-    { label: 'Paused', items: byStatus('paused') },
-    { label: 'Needs attention', items: byStatus('error') },
-    // Completed but not in history yet: on its way there, so listed with it.
-    { label: 'Finished', items: [...byStatus('completed'), ...history] }
-  ].filter((group) => group.items.length > 0)
+const GROUP_LABELS = ['Downloading', 'Queued', 'Paused', 'Needs attention', 'Finished'] as const
+
+function groupLabelOf(item: Item): (typeof GROUP_LABELS)[number] {
+  // Completed but not in history yet: on its way there, so listed with it.
+  if ('unitsWritten' in item || item.status === 'completed') return 'Finished'
+  if (item.status === 'downloading') return 'Downloading'
+  if (item.status === 'queued') return 'Queued'
+  return item.status === 'paused' ? 'Paused' : 'Needs attention'
+}
+
+/** `items` by status, oldest first and finished last. With `folders`, downloads started together
+ * are one entry, under the most active status any of them has; it's ordered by its first. */
+function groupsOf(items: Item[], folders: boolean): Group[] {
+  const batches = new Map<string, Item[]>()
+  for (const item of items) {
+    if (folders && item.batch)
+      batches.set(item.batch.id, [...(batches.get(item.batch.id) ?? []), item])
+  }
+  const groups = new Map<string, Entry[]>(GROUP_LABELS.map((label) => [label, []]))
+  const placed = new Set<string>()
+  for (const item of items) {
+    const members = item.batch && batches.get(item.batch.id)
+    if (members && members.length > 1) {
+      if (placed.has(item.batch!.id)) continue
+      placed.add(item.batch!.id)
+      const label = GROUP_LABELS.find((l) => members.some((member) => groupLabelOf(member) === l))!
+      groups.get(label)!.push({ kind: 'batch', batch: item.batch!, members })
+    } else groups.get(groupLabelOf(item))!.push(item)
+  }
+  const queuedAt = (entry: Entry): number =>
+    Math.min(...membersOf(entry).map((item) => ('queuedAt' in item && item.queuedAt) || Infinity))
+  groups.get('Queued')!.sort((a, b) => queuedAt(a) - queuedAt(b))
+  return GROUP_LABELS.map((label) => ({ label, items: groups.get(label)! })).filter(
+    (group) => group.items.length > 0
+  )
 }
 
 /** "2 downloading · 1 queued", or "all done". */
@@ -90,6 +127,7 @@ const groupLabelClass =
 export function DownloadsScreen(): React.JSX.Element {
   const downloadsById = useAppStore((store) => store.downloads)
   const history = useAppStore((store) => store.history)
+  const view = useAppStore((store) => store.view)
   const setView = useAppStore((store) => store.setView)
   const openNewDownload = useAppStore((store) => store.openNewDownload)
   const filter = useAppStore((store) => store.downloadFilter)
@@ -110,11 +148,18 @@ export function DownloadsScreen(): React.JSX.Element {
     return () => clearInterval(interval)
   }, [])
 
-  const downloads = Object.values(downloadsById)
-    .filter((download) => download.status !== 'cancelled')
-    .sort((a, b) => a.startedAt - b.startedAt)
-  const allGroups = groupsOf(downloads, history)
-  const allItems = allGroups.flatMap((group) => group.items)
+  // Inside a batch's folder, only its downloads, by status as the list has them.
+  const folderId = view.name === 'folder' ? view.batchId : null
+  const everything: Item[] = [
+    ...Object.values(downloadsById)
+      .filter((download) => download.status !== 'cancelled')
+      .sort((a, b) => a.startedAt - b.startedAt),
+    ...history
+  ]
+  const allItems = folderId ? everything.filter((item) => item.batch?.id === folderId) : everything
+  const downloads = allItems.filter((item): item is DownloadState => !isFinished(item))
+  const folderName = allItems[0]?.batch?.name
+  const allGroups = groupsOf(allItems, !folderId)
   const counts: Record<DownloadFilter, number> = {
     all: allItems.length,
     progress: 0,
@@ -122,22 +167,28 @@ export function DownloadsScreen(): React.JSX.Element {
     failed: 0
   }
   for (const item of allItems) counts[filterOf(item)]++
+  const matches = (item: Item): boolean =>
+    item.fileName.toLowerCase().includes(needle) ||
+    item.url.toLowerCase().includes(needle) ||
+    !!item.batch?.name.toLowerCase().includes(needle)
   const groups = allGroups
-    .filter((group) => filter === 'all' || filterOf(group.items[0]) === filter)
+    .filter(
+      (group) => filter === 'all' || folderId || filterOf(membersOf(group.items[0])[0]) === filter
+    )
     .map((group) =>
       needle
         ? {
             ...group,
-            items: group.items.filter(
-              (item) =>
-                item.fileName.toLowerCase().includes(needle) ||
-                item.url.toLowerCase().includes(needle)
-            )
+            items: group.items.flatMap((entry): Entry[] => {
+              if (!isFolderEntry(entry)) return matches(entry) ? [entry] : []
+              const members = entry.members.filter(matches)
+              return members.length > 0 ? [{ ...entry, members }] : []
+            })
           }
         : group
     )
     .filter((group) => group.items.length > 0)
-  const items = groups.flatMap((group) => group.items)
+  const items = groups.flatMap((group) => group.items.flatMap(membersOf))
   // Only what's still listed counts: one that finished or went is no longer selected.
   const chosen = items.filter((item) => selected.has(item.id))
 
@@ -156,7 +207,25 @@ export function DownloadsScreen(): React.JSX.Element {
   // Stable, with the colors resolved once here, so a finished row skips every progress push.
   const networkVisual = useNetworkVisuals()
   const selectRow = useCallback((id: string, on: boolean) => toggle([id], on), [toggle])
-  const openRow = useCallback((id: string) => setView({ name: 'download', id }), [setView])
+  const openRow = useCallback(
+    (id: string) => setView({ name: 'download', id, from: folderId ?? undefined }),
+    [setView, folderId]
+  )
+  const openFolder = useCallback(
+    (batchId: string) => {
+      setSelected(new Set())
+      setView({ name: 'folder', batchId })
+    },
+    [setView]
+  )
+  const leaveFolder = (): void => {
+    setSelected(new Set())
+    setView({ name: 'list' })
+  }
+  // A folder whose downloads have all gone (removed, cleared) has nothing left to show.
+  useEffect(() => {
+    if (folderId && allItems.length === 0) setView({ name: 'list' })
+  }, [folderId, allItems.length, setView])
   // Keys for the selection: Esc clears it, Select all, and Delete takes
   // the selected off the list (with Cmd/Ctrl, moves their files to the Trash), each asking first.
   useEffect(() => {
@@ -212,14 +281,25 @@ export function DownloadsScreen(): React.JSX.Element {
     <div className="flex h-full flex-col bg-background">
       {chosen.length === 0 ? (
         <div className="flex h-12 shrink-0 items-center gap-3 border-b-[0.5px] border-border px-5">
-          <DownloadFilterMenu
-            value={filter}
-            counts={counts}
-            onChange={(next) => {
-              setFilter(next)
-              setSelected(new Set())
-            }}
-          />
+          {folderId ? (
+            <button
+              type="button"
+              onClick={leaveFolder}
+              className="-ml-2 flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 font-sans text-[15px] leading-none font-medium text-[var(--text-secondary)] hover:text-foreground"
+            >
+              <ChevronLeft className="size-4.5 shrink-0" />
+              <span className="truncate">{folderName}</span>
+            </button>
+          ) : (
+            <DownloadFilterMenu
+              value={filter}
+              counts={counts}
+              onChange={(next) => {
+                setFilter(next)
+                setSelected(new Set())
+              }}
+            />
+          )}
           {/* One group already says it in its header. */}
           {allGroups.length > 1 && (
             <div className="font-mono text-[11.5px] leading-none text-muted-foreground">
@@ -313,7 +393,7 @@ export function DownloadsScreen(): React.JSX.Element {
             ))}
             <MoreActionsMenu groups={moreActions} disabled={busy} />
           </div>
-          <ScheduleIndicator onClick={openSchedule} />
+          <ScheduleIndicator onClick={openSchedule} onlyWhenOn />
         </div>
       )}
 
@@ -343,7 +423,7 @@ export function DownloadsScreen(): React.JSX.Element {
             </div>
           ))}
         {groups.map((group) => {
-          const ids = group.items.map((item) => item.id)
+          const ids = group.items.flatMap(membersOf).map((item) => item.id)
           const all = ids.every((id) => selected.has(id))
           const some = !all && ids.some((id) => selected.has(id))
           return (
@@ -364,7 +444,7 @@ export function DownloadsScreen(): React.JSX.Element {
                   <span className="ml-2.5 tracking-normal">{group.items.length}</span>
                 </h2>
                 <div className="flex-1" />
-                {group.label === 'Finished' && history.length > 0 && (
+                {group.label === 'Finished' && history.length > 0 && !folderId && (
                   <button
                     type="button"
                     className="text-[12.5px] text-[var(--text-secondary)] hover:text-foreground"
@@ -374,22 +454,33 @@ export function DownloadsScreen(): React.JSX.Element {
                   </button>
                 )}
               </div>
-              {group.items.map((item) => (
-                <ListedDownload
-                  key={item.id}
-                  item={item}
-                  now={now}
-                  selected={selected.has(item.id)}
-                  // Only a selected row's menu acts on the selection.
-                  chosen={selected.has(item.id) ? chosen : NOT_CHOSEN}
-                  networkVisual={
-                    isFinished(item) || item.status === 'completed' ? undefined : networkVisual
-                  }
-                  onSelect={selectRow}
-                  onOpen={openRow}
-                  onPerform={perform}
-                />
-              ))}
+              {group.items.map((item) =>
+                isFolderEntry(item) ? (
+                  <FolderRow
+                    key={item.batch.id}
+                    folder={item}
+                    selected={selected}
+                    onSelect={toggle}
+                    onOpen={openFolder}
+                    onPerform={perform}
+                  />
+                ) : (
+                  <ListedDownload
+                    key={item.id}
+                    item={item}
+                    now={now}
+                    selected={selected.has(item.id)}
+                    // Only a selected row's menu acts on the selection.
+                    chosen={selected.has(item.id) ? chosen : NOT_CHOSEN}
+                    networkVisual={
+                      isFinished(item) || item.status === 'completed' ? undefined : networkVisual
+                    }
+                    onSelect={selectRow}
+                    onOpen={openRow}
+                    onPerform={perform}
+                  />
+                )
+              )}
             </section>
           )
         })}
@@ -478,6 +569,152 @@ const ListedDownload = memo(function ListedDownload({
     </DownloadContextMenu>
   )
 })
+
+/** Downloads started together, as one row: their combined progress, a button that pauses or
+ * resumes them all, and a menu acting on them all. Its checkbox selects every one of them, so
+ * the selection toolbar works on it as on any rows. Opened, it lists them (the folder view). */
+function FolderRow({
+  folder,
+  selected,
+  onSelect,
+  onOpen,
+  onPerform
+}: {
+  folder: Folder
+  selected: Set<string>
+  onSelect: (ids: string[], on: boolean) => void
+  onOpen: (batchId: string) => void
+  onPerform: (id: ActionId, targets: Item[]) => Promise<boolean>
+}): React.JSX.Element {
+  const formatSpeed = useFormatSpeed()
+  const [working, setWorking] = useState(false)
+  const { batch, members } = folder
+  const ids = members.map((item) => item.id)
+  const all = ids.every((id) => selected.has(id))
+  const some = !all && ids.some((id) => selected.has(id))
+
+  const done = members.filter(isDone).length
+  const failed = members.filter(isFailed).length
+  const wanted = members.reduce((sum, item) => sum + wantedBytes(item), 0)
+  const got = members.reduce(
+    (sum, item) =>
+      sum + (isDone(item) ? wantedBytes(item) || item.bytesDownloaded : item.bytesDownloaded),
+    0
+  )
+  const running = members.filter(
+    (item): item is DownloadState => !isFinished(item) && item.status === 'downloading'
+  )
+  const speed = running.reduce((sum, item) => sum + item.speedBytesPerSec, 0)
+  const allDone = done === members.length
+  const detail = [
+    `${members.length} files`,
+    allDone ? formatBytes(wanted || got) : `${done} done`,
+    !allDone && (wanted > 0 ? `${formatBytes(got)} of ${formatBytes(wanted)}` : formatBytes(got)),
+    failed > 0 && `${failed} need attention`
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  // The next step for all of them: pausing what runs, else resuming or retrying what doesn't.
+  const actionId = (['pause', 'resume', 'retry'] as const).find((id) =>
+    members.some((item) => rowAction(item) === id)
+  )
+  const targets = actionId ? members.filter((item) => rowAction(item) === actionId) : []
+  const action = actionId ? ACTION_META[actionId] : null
+
+  return (
+    <DownloadContextMenu item={members[0]} selected chosen={members}>
+      <div
+        data-selected={all || undefined}
+        className={cn(
+          'group/download-row my-0.5 -mx-2 flex items-center gap-3 rounded-lg px-2 py-3 transition-colors',
+          all
+            ? 'bg-primary/10 hover:bg-primary/15 focus-within:bg-primary/15'
+            : 'hover:bg-secondary focus-within:bg-secondary'
+        )}
+      >
+        <Checkbox
+          aria-label={`Select ${batch.name}`}
+          checked={all}
+          indeterminate={some}
+          onCheckedChange={(on) => onSelect(ids, on)}
+        />
+        <button
+          type="button"
+          onClick={() => onOpen(batch.id)}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border-[0.5px] border-border bg-card text-muted-foreground">
+            <FolderIcon aria-hidden className="size-4.5" strokeWidth={1.75} />
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-sans text-[14px] leading-tight font-medium">
+                {batch.name}
+              </span>
+              <TypeIcon fileName={members[0].fileName} />
+              {speed > 0 && (
+                <span className="ml-auto shrink-0 pl-2 font-mono text-[12.5px] font-medium tabular-nums">
+                  {formatSpeed(speed)}
+                </span>
+              )}
+            </div>
+            {!allDone && wanted > 0 && (
+              <div
+                className={cn(
+                  'flex h-1 overflow-hidden rounded-full bg-muted',
+                  running.length === 0 && 'opacity-40'
+                )}
+              >
+                <div
+                  className={
+                    failed > 0 && running.length === 0 ? 'bg-[var(--color-danger)]' : 'bg-primary'
+                  }
+                  style={{ width: `${Math.min(100, (got / wanted) * 100)}%` }}
+                />
+              </div>
+            )}
+            <div className="truncate font-mono text-[11.5px] leading-tight text-muted-foreground">
+              {detail}
+            </div>
+          </div>
+        </button>
+        {action && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`${action.label} all in ${batch.name}`}
+                  aria-busy={working}
+                  disabled={working}
+                  onClick={() => {
+                    setWorking(true)
+                    void onPerform(actionId!, targets).finally(() => setWorking(false))
+                  }}
+                  className="text-muted-foreground group-hover/download-row:text-foreground"
+                >
+                  <action.icon />
+                </Button>
+              }
+            />
+            <TooltipContent>{action.label} all</TooltipContent>
+          </Tooltip>
+        )}
+        <button
+          type="button"
+          aria-label={`Open ${batch.name}`}
+          onClick={() => onOpen(batch.id)}
+          className="rounded-md p-1 text-muted-foreground transition-colors group-hover/download-row:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
+    </DownloadContextMenu>
+  )
+}
 
 const DownloadRow = memo(function DownloadRow({
   item,
@@ -630,6 +867,7 @@ const DownloadRow = memo(function DownloadRow({
             <span className="truncate font-sans text-[14px] leading-tight font-medium">
               {item.fileName}
             </span>
+            {!isFolder(item) && <TypeIcon fileName={item.fileName} />}
             {item.kind === 'torrent' && <TorrentBadge />}
             {(dots || speed) && (
               <div className="ml-auto flex shrink-0 items-center gap-2.5 pl-2">

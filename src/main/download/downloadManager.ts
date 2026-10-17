@@ -968,7 +968,8 @@ export class DownloadManager {
         pieces,
         totalPieces: pieces.length,
         pieceLength: torrent.pieceLength,
-        startedAt: Date.now()
+        startedAt: Date.now(),
+        batch: requestPayload.batch
       }
       runtime = this.newTorrentRuntime(state, requestPayload, file, pieces, torrentFile)
     } else {
@@ -1012,6 +1013,7 @@ export class DownloadManager {
         totalBlocks: blocks.length,
         blockSizeBytes,
         startedAt: Date.now(),
+        batch: requestPayload.batch,
         ...(requestPayload.browser && {
           fromBrowser: requestPayload.browser.name ?? 'your browser'
         })
@@ -1024,9 +1026,15 @@ export class DownloadManager {
       )
     }
     // Decided only now: other starts may have taken the room while this one was set up.
-    const room = this.runningCount() < this.downloadsAtOnce && this.scheduleAllowsDownloads()
-    if (!room) this.enqueue(runtime, false)
-    runtime.state.scheduled = this.downloadSchedule?.enabled || undefined
+    const paused = requestPayload.paused === true
+    const room =
+      !paused && this.runningCount() < this.downloadsAtOnce && this.scheduleAllowsDownloads()
+    if (paused) {
+      // Added for later: it waits for Resume, like any paused download.
+      runtime.state.status = 'paused'
+      runtime.state.pausedAt = Date.now()
+    } else if (!room) this.enqueue(runtime, false)
+    runtime.state.scheduled = (!paused && this.downloadSchedule?.enabled) || undefined
     this.runtimes.set(id, runtime)
     await this.persistNow(runtime)
     this.pushUpdate(runtime)
@@ -1644,6 +1652,15 @@ export class DownloadManager {
       sha256.update(chunk)
     }
     return { md5: md5.digest('hex'), sha1: sha1.digest('hex'), sha256: sha256.digest('hex') }
+  }
+
+  /** Pauses everything running or waiting its turn, as Pause on each would (the stop timer). */
+  async pauseAll(): Promise<void> {
+    await Promise.all(
+      [...this.runtimes.values()]
+        .filter(({ state }) => state.status === 'downloading' || state.status === 'queued')
+        .map(({ state }) => this.pause(state.id))
+    )
   }
 
   async suspendAll(): Promise<void> {

@@ -223,6 +223,14 @@ interface DownloadStateBase {
   peakSpeedBytesPerSec?: number
   /** The update this state is as of (see DownloadUpdate). */
   seq?: number
+  /** Started with others as one batch: the list shows them as one folder. */
+  batch?: DownloadBatch
+}
+
+/** Downloads started together (a season, a game's parts), listed as one folder. */
+export interface DownloadBatch {
+  id: string
+  name: string
 }
 
 export interface HttpDownloadState extends DownloadStateBase {
@@ -406,6 +414,10 @@ interface StartDownloadRequestBase {
   interfaceIds: string[]
   etag: string | null
   lastModified: string | null
+  /** The batch it's part of, if it was started with others. */
+  batch?: DownloadBatch
+  /** Added paused, to be resumed later, rather than started. */
+  paused?: boolean
 }
 
 export interface StartHttpDownloadRequest extends StartDownloadRequestBase {

@@ -68,6 +68,10 @@ export interface IpcContract {
   whenDone: { args: []; result: WhenDone }
   /** The when-done menu, as a native menu at the pointer. */
   showWhenDoneMenu: { args: []; result: void }
+  /** When every download will be paused (see main/stopTimer.ts); null with no timer set. */
+  stopTimer: { args: []; result: number | null }
+  /** Sets the stop timer for a time (ms since the epoch), or calls it off with null. */
+  setStopTimer: { args: [at: number | null]; result: void }
   /** Oldest first: every link not yet started or dismissed. */
   pendingLinks: { args: []; result: PendingLink[] }
   /** Resumes the failed download a link was matched to, from that link (see relinkDownload). */

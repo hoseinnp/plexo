@@ -135,7 +135,8 @@ export function DownloadActionsProvider({
       }
       // Showing one that's gone: back to the list.
       const view = useAppStore.getState().view
-      if (view.name === 'download' && (clearAll || gone.has(view.id))) setView({ name: 'list' })
+      if (view.name === 'download' && (clearAll || gone.has(view.id)))
+        setView(view.from ? { name: 'folder', batchId: view.from } : { name: 'list' })
       const left = items.filter((item) => !gone.has(item.id))
       if (!clearAll && left.length > 0) {
         setConfirmation({ mode, items: left, clearAll })

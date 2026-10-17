@@ -19,7 +19,12 @@ export type DownloadFilter = 'all' | 'progress' | 'finished' | 'failed'
 type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 /** What the window shows: the list of downloads, or one download. */
-export type View = { name: 'list' } | { name: 'download'; id: string }
+/** The list; a batch's folder in it; or one download's screen (`from`: the folder it was opened
+ * from, which its Back returns to). */
+export type View =
+  | { name: 'list' }
+  | { name: 'folder'; batchId: string }
+  | { name: 'download'; id: string; from?: string }
 
 interface AppStore {
   interfaces: NetworkInterfaceInfo[]

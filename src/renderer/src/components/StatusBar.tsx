@@ -1,4 +1,6 @@
-import type { SpeedUnit } from '@shared/types'
+import type { SpeedUnit, WhenDone } from '@shared/types'
+import { cn } from 'cn'
+import { Power } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { formatBytes } from '../utils/format'
@@ -11,6 +13,42 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 const FREE_SPACE_POLL_MS = 30_000
+
+const WHEN_DONE_TEXT: Record<WhenDone, string> = {
+  nothing: 'When done',
+  sleep: 'Then sleep',
+  shutdown: 'Then shut down'
+}
+
+/** What the PC does once every download is done; the menu is main's (see main/whenDone.ts). */
+function WhenDoneButton(): React.JSX.Element {
+  const [choice, setChoice] = useState<WhenDone>('nothing')
+  useEffect(() => {
+    const stop = window.plexo.onWhenDone(setChoice)
+    window.plexo.whenDone().then(setChoice, () => {})
+    return stop
+  }, [])
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={() => void window.plexo.showWhenDoneMenu()}
+            className={cn(
+              'flex h-[26px] shrink-0 cursor-default items-center gap-1.5 rounded-[6px] border-[0.5px] border-border bg-secondary px-[7px] [-webkit-app-region:no-drag]',
+              choice === 'nothing' ? 'text-[var(--text-secondary)]' : 'text-primary'
+            )}
+          >
+            <Power size={13} strokeWidth={1.5} />
+            {WHEN_DONE_TEXT[choice]}
+          </button>
+        }
+      />
+      <TooltipContent>What this PC does when every download is done</TooltipContent>
+    </Tooltip>
+  )
+}
 
 /** MB/s or Mbps for every speed in the app; sits with the theme toggle as a view preference. */
 function SpeedUnitToggle(): React.JSX.Element {
@@ -93,6 +131,7 @@ export function StatusBar(): React.JSX.Element {
       {message && <span className="truncate">{message}</span>}
       {/* Controls, most-flipped first: the edge holds the set-once view preferences. */}
       <div className="flex shrink-0 items-center gap-3">
+        {window.plexo.platform === 'win32' && <WhenDoneButton />}
         <Tooltip>
           <TooltipTrigger
             render={

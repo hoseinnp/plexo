@@ -38,6 +38,7 @@ import { Limits } from '../network/limits'
 import { loadSettings } from '../settings'
 import { addToHistory, findInHistory, removeFromHistory } from './history'
 import { testKnobs } from '../testKnobs'
+import { activityChanged, downloadFinished } from '../whenDone'
 import { DownloadFile } from './downloadFile'
 import { compareSamples, HttpTransfer, pickedStreams, splittable } from './httpTransfer'
 import { normalizeEtag } from './fileVersion'
@@ -1405,6 +1406,9 @@ export class DownloadManager {
     } catch {
       // Not every desktop can be kept awake; the download runs regardless.
     }
+    activityChanged(
+      running || [...this.runtimes.values()].some((runtime) => runtime.state.status === 'queued')
+    )
   }
 
   /** A torrent download's own .torrent, read: its files never change, so they're read when
@@ -1737,6 +1741,7 @@ export class DownloadManager {
       await this.persistNow(runtime)
       await runtime.file.discardLeftover().catch(() => {})
       this.notify('Download complete', `${runtime.state.fileName} has finished downloading.`)
+      downloadFinished()
     } catch (error) {
       runtime.state.status = 'error'
       runtime.state.error = error instanceof Error ? error.message : String(error)

@@ -26,6 +26,7 @@ import { pendingLink, pendingLinks, releaseLink } from '../openLinks'
 import { NetworkMonitor } from '../network/interfaces'
 import { loadSettings, saveSettings } from '../settings'
 import { showUpdateMenu, updateState } from '../updater'
+import { showWhenDoneMenu, startWhenDone, whenDone } from '../whenDone'
 
 async function openNetworkSettings(): Promise<void> {
   if (process.platform === 'win32') {
@@ -246,6 +247,9 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): Down
 
   handle('updateState', () => updateState())
   handle('showUpdateMenu', () => showUpdateMenu())
+  startWhenDone(getWindow)
+  handle('whenDone', () => whenDone())
+  handle('showWhenDoneMenu', () => showWhenDoneMenu())
 
   return manager
 }

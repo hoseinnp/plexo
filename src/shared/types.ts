@@ -319,6 +319,9 @@ export interface UpdateState {
   percent?: number
 }
 
+/** What the PC does once every download is done (see main/whenDone.ts). */
+export type WhenDone = 'nothing' | 'sleep' | 'shutdown'
+
 /** A repeating window for all transfers, interpreted in the computer's local timezone. */
 export interface DownloadSchedule {
   enabled: boolean

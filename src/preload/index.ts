@@ -6,7 +6,8 @@ import type {
   DownloadUpdate,
   InitialState,
   NetworkInterfaceInfo,
-  UpdateState
+  UpdateState,
+  WhenDone
 } from '../shared/types'
 
 /** Typed wrapper around ipcRenderer.invoke — the channel name picks its args/result shape out of
@@ -57,6 +58,8 @@ const plexoApi = {
     invoke('removeDownload', downloadId, options),
   updateState: () => invoke('updateState'),
   showUpdateMenu: () => invoke('showUpdateMenu'),
+  whenDone: () => invoke('whenDone'),
+  showWhenDoneMenu: () => invoke('showWhenDoneMenu'),
   pendingLinks: () => invoke('pendingLinks'),
   resumeFromLink: (linkId: string, downloadId: string) =>
     invoke('resumeFromLink', linkId, downloadId),
@@ -88,7 +91,13 @@ const plexoApi = {
     return () => ipcRenderer.removeListener(IpcChannels.updateStateChanged, listener)
   },
 
-  onNetworksChanged: (callback: (networks: NetworkInterfaceInfo[]) => void): (() => void) => {
+  onWhenDone: (callback: (choice: WhenDone) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, choice: WhenDone): void => callback(choice)
+    ipcRenderer.on(IpcChannels.whenDoneChanged, listener)
+    return () => ipcRenderer.removeListener(IpcChannels.whenDoneChanged, listener)
+  },
+
+  onNetworksChanged:(callback: (networks: NetworkInterfaceInfo[]) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, networks: NetworkInterfaceInfo[]): void =>
       callback(networks)
     ipcRenderer.on(IpcChannels.networksChanged, listener)

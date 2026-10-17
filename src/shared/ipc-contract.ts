@@ -7,7 +7,8 @@ import type {
   ProbeResult,
   StartDownloadRequest,
   TorrentFileEntry,
-  UpdateState
+  UpdateState,
+  WhenDone
 } from './types'
 
 /** The request/response half of the IPC surface (every IpcChannels entry except the
@@ -60,6 +61,10 @@ export interface IpcContract {
   updateState: { args: []; result: UpdateState }
   /** The update menu, as a native menu at the pointer. */
   showUpdateMenu: { args: []; result: void }
+  /** What the PC does once every download is done (see main/whenDone.ts). */
+  whenDone: { args: []; result: WhenDone }
+  /** The when-done menu, as a native menu at the pointer. */
+  showWhenDoneMenu: { args: []; result: void }
   /** Oldest first: every link not yet started or dismissed. */
   pendingLinks: { args: []; result: PendingLink[] }
   /** Resumes the failed download a link was matched to, from that link (see relinkDownload). */

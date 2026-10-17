@@ -34,5 +34,8 @@ export const IpcChannels = {
   dismissLink: 'app:dismiss-link',
   updateState: 'update:state',
   updateStateChanged: 'update:state-changed',
-  showUpdateMenu: 'update:show-menu'
+  showUpdateMenu: 'update:show-menu',
+  whenDone: 'when-done:get',
+  whenDoneChanged: 'when-done:changed',
+  showWhenDoneMenu: 'when-done:show-menu'
 } as const

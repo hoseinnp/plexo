@@ -205,7 +205,7 @@ interface DownloadStateBase {
   /** For an error: whether resuming can pick up where it stopped. False when the progress was
    * thrown away, e.g. the file changed on the server. */
   resumable?: boolean
-  /** For an error: when Plexo tries again on its own (see DownloadManager.scheduleRetry). */
+  /** For an error: when Plexo tries again on its own (see DownloadManager.armRetry). */
   retryAt?: number
   startedAt: number
   /** Enrolled in the scheduled queue; survives relaunches until manually paused. */

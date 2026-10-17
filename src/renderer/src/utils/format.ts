@@ -180,14 +180,9 @@ export function formatWhen(time: number, now: number): string {
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-/** When a failed download tries again on its own ("Retrying at 14:05"), or '' if it won't. */
+/** Said of a failed download that tries again on its own; '' for one that won't. */
 export function retryNote(download: DownloadState): string {
-  if (!download.retryAt) return ''
-  const clock = new Date(download.retryAt).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-  return `Retrying at ${clock}`
+  return download.retryAt ? 'Retrying automatically' : ''
 }
 
 /** What Plexo can download: a web link, a magnet link, or a .torrent file on this computer. */

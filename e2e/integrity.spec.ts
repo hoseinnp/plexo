@@ -166,39 +166,23 @@ test.describe('permanent faults end in a clean error @smoke', () => {
 })
 
 test.describe('a failed download tries again on its own @smoke', () => {
-  // Retries after 0.2, 1 and 3 s instead of 1, 5 and 15 min.
+  // Every 0.2 s instead of every 10.
   test.use({ appEnv: { PLEXO_E2E_AUTO_RETRY_MS: '200' } })
 
-  test('and finishes once the server is back', async ({ plexo, serve }) => {
+  test('again and again, until the server is back', async ({ plexo, serve }) => {
     const origin = await serve({ size: SIZE })
     let down = true
     origin.setRule(({ range }) => (down && range && !isProbe(range) ? { status: 500 } : 'ok'))
     await plexo.start(origin.url(), origin.sha256, { connections: 2 })
     const failed = await plexo.waitForStatus('error')
     expect(failed.retryAt).toBeGreaterThan(0)
+    // Each run asks the server as many times before it fails: five runs' worth is four retries.
+    const refused = (): number => origin.log.filter((entry) => entry.status === 500).length
+    const oneRun = refused()
+    await expect.poll(refused, { timeout: 20_000 }).toBeGreaterThanOrEqual(5 * oneRun)
     down = false
     const done = await plexo.waitForStatus('completed')
     expect(done.retryAt).toBeUndefined()
-  })
-
-  test('three times, then leaves it to the user', async ({ plexo, serve }) => {
-    const origin = await serve({ size: SIZE })
-    origin.setRule(({ range }) => (range && !isProbe(range) ? { status: 500 } : 'ok'))
-    await plexo.start(origin.url(), origin.sha256, { connections: 2 })
-    const refused = (): number => origin.log.filter((entry) => entry.status === 500).length
-    await plexo.waitForStatus('error')
-    const oneRun = refused()
-    const gaveUp = await plexo.waitUntil(
-      (state) => state.status === 'error' && state.retryAt === undefined,
-      20_000
-    )
-    expect(gaveUp.resumable).not.toBe(false)
-    // Four runs asked the server: the first and its three retries.
-    expect(refused()).toBeGreaterThan(3 * oneRun)
-    // And none after that.
-    const after = refused()
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    expect(refused()).toBe(after)
   })
 })
 
@@ -242,6 +226,8 @@ test.describe('the file changes on the server mid-download @smoke', () => {
       const state = await plexo.waitForStatus(['completed', 'error'])
       expect(state.status).toBe('error')
       expect(state.error).toMatch(/changed during the download/)
+      // What it had is of the old version: there's nothing to retry.
+      expect(state.retryAt).toBeUndefined()
     })
   }
 })

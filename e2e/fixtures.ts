@@ -131,6 +131,8 @@ export class PlexoApp {
             PLEXO_E2E_SERVER_BUSY_MS: '1',
             // Off unless a test asks for it: a hedge is an extra request, and most tests count them.
             PLEXO_E2E_HEDGE_MS: '600000',
+            // Likewise a failed download's automatic retry: most tests look at it failed.
+            PLEXO_E2E_AUTO_RETRY_MS: '600000',
             // Fixed for the same reason, and for downloads started through the UI.
             PLEXO_E2E_STREAMS: '2',
             PLEXO_E2E_INTERFACES: interfacesEnv(NETWORKS),

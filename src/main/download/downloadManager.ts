@@ -106,16 +106,13 @@ interface RuntimeFields {
   peakReadings: { time: number; bytes: number }[]
   /** Changes asked of a torrent's choice of files, counted: only the latest applies. */
   fileChoices: number
-  /** The pending automatic retry of a failed download, and how many it has had since it last got
-   * further (see scheduleRetry). Not persisted: a relaunch re-arms one from state.retryAt. */
+  /** The pending automatic retry of a failed download (see armRetry). Not persisted: a relaunch
+   * re-arms one from state.retryAt. */
   retryTimer?: NodeJS.Timeout
-  autoRetries?: number
-  failedAtBytes?: number
+  /** This run was started by an automatic retry rather than by the user: its failure isn't told
+   * again. */
+  autoRetried?: boolean
 }
-
-/** Minutes before each automatic retry of a failed download; after the last, it waits for the
- * user. */
-const AUTO_RETRY_MINUTES = [1, 5, 15]
 
 interface HttpDownloadRuntime extends RuntimeFields, HttpTransferTarget {
   kind: 'http'
@@ -878,7 +875,7 @@ export class DownloadManager {
     if (state.status !== 'completed') state.speedHistory = undefined
     // A retry the relaunch cut short is armed again, though not before the app has settled.
     if (state.status === 'error' && state.resumable !== false && state.retryAt) {
-      this.armRetry(runtime, Math.max(state.retryAt, Date.now() + testKnobs.autoRetryMinuteMs))
+      this.armRetry(runtime, Math.max(state.retryAt, Date.now() + testKnobs.autoRetryMs))
     }
     recomputeAggregates(state, units)
     return runtime
@@ -1213,11 +1210,13 @@ export class DownloadManager {
     return undefined
   }
 
-  resume(id: string): void {
+  /** `auto`: an automatic retry (see armRetry), rather than the user. */
+  resume(id: string, auto = false): void {
     const runtime = this.runtimes.get(id)
     if (!runtime || runtime.cancelPromise) return
     const { status, resumable } = runtime.state
     if (status !== 'paused' && !(status === 'error' && resumable !== false)) return
+    runtime.autoRetried = auto
 
     void this.resumeAfterVerifying(runtime, false)
   }
@@ -1807,28 +1806,17 @@ export class DownloadManager {
     runtime.state.status = 'error'
     runtime.state.error = message
     runtime.state.resumable = !discard
-    const minutes = discard ? undefined : this.scheduleRetry(runtime)
-    // Told on the first failure and when Plexo gives up, not on each retry in between.
-    if (minutes === undefined || runtime.autoRetries === 1) {
-      const next = minutes === undefined ? '' : ` Trying again in ${minutes} min.`
+    // One it can resume tries again on its own until it finishes or the user steps in.
+    if (!discard) this.armRetry(runtime, Date.now() + testKnobs.autoRetryMs)
+    // Told once, not again by every retry that fails.
+    if (!runtime.autoRetried) {
+      const next = discard ? '' : ` Trying again every ${testKnobs.autoRetryMs / 1000} seconds.`
       this.notify('Download failed', `${runtime.state.fileName}: ${describeError(message)}${next}`)
     }
     this.stopRun(runtime)
   }
 
-  /** Arms the next automatic retry of a failed download (see AUTO_RETRY_MINUTES): the minutes
-   * until it, or undefined once they're used up. A run that got further than the last failure
-   * earns a fresh set. */
-  private scheduleRetry(runtime: DownloadRuntime): number | undefined {
-    if (runtime.state.bytesDownloaded > (runtime.failedAtBytes ?? -1)) runtime.autoRetries = 0
-    runtime.failedAtBytes = runtime.state.bytesDownloaded
-    const minutes = AUTO_RETRY_MINUTES[runtime.autoRetries ?? 0]
-    if (minutes === undefined) return undefined
-    runtime.autoRetries = (runtime.autoRetries ?? 0) + 1
-    this.armRetry(runtime, Date.now() + minutes * testKnobs.autoRetryMinuteMs)
-    return minutes
-  }
-
+  /** Resumes a failed download on its own at `at` (see failDownload). */
   private armRetry(runtime: DownloadRuntime, at: number): void {
     clearTimeout(runtime.retryTimer)
     runtime.state.retryAt = at
@@ -1841,7 +1829,7 @@ export class DownloadManager {
         if (this.relinking.has(id)) {
           this.disarmRetry(runtime)
           this.pushUpdate(runtime)
-        } else this.resume(id)
+        } else this.resume(id, true)
       },
       Math.max(0, at - Date.now())
     )

@@ -1,7 +1,7 @@
 import type { DownloadState, FinishedDownload } from '@shared/types'
-import { ChevronRight, Plus, X } from 'lucide-react'
+import { ChevronRight, Plus, Search, X } from 'lucide-react'
 import { cn } from 'cn'
-import { Fragment, memo, useCallback, useEffect, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react'
 import { DownloadContextMenu } from '../components/DownloadContextMenu'
 import { useDownloadActions, useDownloadActionsState } from '../components/downloadActionsContext'
 import { ACTION_META, toolbarLabel } from '../components/downloadActionMeta'
@@ -16,6 +16,7 @@ import { NetworksMenu } from '../components/NetworksMenu'
 import { TorrentBadge } from '../components/TorrentBadge'
 import { Button } from '../components/ui/button'
 import { Checkbox } from '../components/ui/checkbox'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
 import { useNetworkVisuals, type ResolveNetworkVisual } from '../hooks/useNetworkVisuals'
 import { useAppStore, type DownloadFilter } from '../store/useAppStore'
@@ -99,6 +100,9 @@ export function DownloadsScreen(): React.JSX.Element {
   const [showSchedule, setShowSchedule] = useState(false)
   const [limitsPage, setLimitsPage] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  const needle = query.trim().toLowerCase()
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 30_000)
@@ -117,9 +121,21 @@ export function DownloadsScreen(): React.JSX.Element {
     failed: 0
   }
   for (const item of allItems) counts[filterOf(item)]++
-  const groups = allGroups.filter(
-    (group) => filter === 'all' || filterOf(group.items[0]) === filter
-  )
+  const groups = allGroups
+    .filter((group) => filter === 'all' || filterOf(group.items[0]) === filter)
+    .map((group) =>
+      needle
+        ? {
+            ...group,
+            items: group.items.filter(
+              (item) =>
+                item.fileName.toLowerCase().includes(needle) ||
+                item.url.toLowerCase().includes(needle)
+            )
+          }
+        : group
+    )
+    .filter((group) => group.items.length > 0)
   const items = groups.flatMap((group) => group.items)
   // Only what's still listed counts: one that finished or went is no longer selected.
   const chosen = items.filter((item) => selected.has(item.id))
@@ -144,6 +160,17 @@ export function DownloadsScreen(): React.JSX.Element {
   // the selected off the list (with Cmd/Ctrl, moves their files to the Trash), each asking first.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      const command = window.plexo.platform === 'darwin' ? event.metaKey : event.ctrlKey
+      if (
+        command &&
+        event.key.toLowerCase() === 'f' &&
+        !document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')
+      ) {
+        event.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+        return
+      }
       const target = event.target
       if (
         event.defaultPrevented ||
@@ -152,7 +179,6 @@ export function DownloadsScreen(): React.JSX.Element {
         document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"]')
       )
         return
-      const command = window.plexo.platform === 'darwin' ? event.metaKey : event.ctrlKey
       if (event.key === 'Escape') setSelected(new Set())
       else if (command && event.key.toLowerCase() === 'a') {
         event.preventDefault()
@@ -200,6 +226,27 @@ export function DownloadsScreen(): React.JSX.Element {
             </div>
           )}
           <div className="flex-1" />
+          <InputGroup className="h-7 w-44 shrink">
+            <InputGroupAddon>
+              <Search />
+            </InputGroupAddon>
+            <InputGroupInput
+              ref={searchRef}
+              type="search"
+              aria-label="Search downloads"
+              placeholder="Search"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                setSelected(new Set())
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape') return
+                setQuery('')
+                event.currentTarget.blur()
+              }}
+            />
+          </InputGroup>
           <ScheduleIndicator onClick={openSchedule} />
           <NetworksMenu
             onOpenLimits={(page) => {
@@ -271,7 +318,14 @@ export function DownloadsScreen(): React.JSX.Element {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
         {groups.length === 0 &&
-          (filter === 'all' ? (
+          (needle ? (
+            <div role="status" className="flex flex-col items-center gap-2 px-5 py-16 text-center">
+              <p className="text-[16px] font-semibold">No downloads match “{query.trim()}”</p>
+              <Button type="button" variant="secondary" onClick={() => setQuery('')}>
+                Clear search
+              </Button>
+            </div>
+          ) : filter === 'all' ? (
             <EmptyState />
           ) : (
             <div role="status" className="flex flex-col items-center gap-2 px-5 py-16 text-center">

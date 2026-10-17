@@ -5,8 +5,7 @@ import icon from '../../resources/icon-dark.png?asset'
 import { registerIpcHandlers } from './ipc/handlers'
 import { keepsRunningForBrowser, startBridge } from './browserBridge'
 import { acceptedLink, bringForward, linkFromArgs, offerLink } from './openLinks'
-import { loadSettings, loadThemeSource, migrateLegacyNetworkPreferences } from './settings'
-import { startUpdater } from './updater'
+import { loadThemeSource, migrateLegacyNetworkPreferences } from './settings'
 import { testKnobs } from './testKnobs'
 import type { DownloadManager } from './download/downloadManager'
 
@@ -141,7 +140,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.plexo.app')
+  electronApp.setAppUserModelId('com.plexo.personal')
 
   // A failed move keeps the old file, to retry next launch — it must never stop the window opening.
   await migrateLegacyNetworkPreferences().catch((error) =>
@@ -177,7 +176,7 @@ app.whenReady().then(async () => {
 
   createWindow()
   if (testKnobs.hideWindow) app.dock?.hide()
-  startUpdater(() => mainWindow, (await loadSettings()).autoUpdate !== false)
+  // Personal build: no auto-update, the official releases would replace this build.
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

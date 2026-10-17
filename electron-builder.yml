@@ -1,5 +1,6 @@
-appId: com.plexo.app
-productName: Plexo
+# Personal build: its own id and name, so it never collides with an official Plexo install.
+appId: com.plexo.personal
+productName: Plexo Personal
 # Shown in the macOS About window and Finder's Get Info, and in the Windows file properties.
 copyright: Copyright © 2026 Anmol Kapil
 afterPack: scripts/check-torrent-package.mjs
@@ -26,10 +27,10 @@ win:
   # No protocols or fileAssociations: the NSIS installer would register Plexo as *the* handler for
   # magnet links and .torrent files, taking them from a torrent client the user already has.
   # A .torrent can still be opened with Plexo through "Open with".
-  executableName: plexo
+  executableName: plexo-personal
   target:
     - target: nsis
-      arch: [x64, arm64]
+      arch: [x64]
 nsis:
   # No ${arch} on purpose: one installer holds both x64 and ARM64, and docs/downloads.js reads an
   # installer with no architecture in its name as exactly that. Add one here and update it there.
@@ -89,7 +90,5 @@ appImage:
 npmRebuild: false
 # Where the app looks for updates. Builds never publish themselves (--publish never): the release
 # workflow uploads them, with the latest*.yml files the updater reads.
-publish:
-  provider: github
-  owner: anmolkapil
-  repo: plexo
+# Personal build: no update feed (the updater isn't started, see src/main/index.ts).
+publish: null

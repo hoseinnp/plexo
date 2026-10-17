@@ -313,7 +313,7 @@ test.describe('settings @smoke', () => {
     await page().getByRole('button', { name: 'Edit network' }).first().click()
     await page().getByRole('textbox', { name: 'Name' }).fill('Office fibre')
     await page().getByRole('button', { name: 'Violet' }).click()
-    await page().getByRole('button', { name: 'Done' }).click()
+    await page().getByRole('button', { name: 'Done', exact: true }).click()
     await page().keyboard.press('Escape')
 
     const expectAllKept = async (): Promise<void> => {

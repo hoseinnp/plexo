@@ -9,6 +9,8 @@
   Plexo combines Wi-Fi, Ethernet, mobile networks, and other available connections to boost your download speeds.
 </p>
 
+> **Plexo Personal** is a personal fork of [Plexo](https://github.com/anmolkapil/plexo) by Anmol Kapil, used under the [MIT License](LICENSE). It adds batch downloads, batch folders, automatic retry, checksums and a stop timer. Get it from [this fork's releases](https://github.com/hoseinnp/plexo/releases). Please report problems with this fork to [hoseinnp](https://github.com/hoseinnp), not to the original project.
+
 <p align="center">
   <a href="https://getplexo.app">Download</a> ·
   <a href="#features">Features</a> ·

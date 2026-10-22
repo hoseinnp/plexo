@@ -1,7 +1,9 @@
-import { join } from 'node:path'
+import { mkdir, open } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import type WebTorrent from 'webtorrent'
 import type { ClientOptions, Store, StoreOptions } from 'webtorrent'
 import { testKnobs } from '../../testKnobs'
+import { markSparse } from '../sparseFile'
 
 // The only file that loads webtorrent. It's ESM-only and main is bundled as CommonJS, so it comes
 // in through import(), once, and only when a torrent is first looked at.
@@ -44,6 +46,20 @@ export async function storeNamed(name: string, onWritten: (path: string) => void
           offset: file.offset
         }))
       })
+      // Sparse before the first write, as staging files are (see sparseFile.ts): pieces land all
+      // over a file, and on NTFS each one past the end so far waits for the gap to be zeroed —
+      // minutes on a hard drive, while the pieces behind it wait to be verified.
+      for (const file of this.files) {
+        const openFile = file.open
+        let sparse: Promise<unknown> | null = null
+        file.open = (cb) => {
+          sparse ??= mkdir(dirname(file.path), { recursive: true })
+            .then(() => open(file.path, 'a'))
+            .then((handle) => handle.close())
+            .then(() => markSparse(file.path))
+          sparse.then(() => openFile(cb), cb)
+        }
+      }
     }
 
     put(index: number, buf: Uint8Array, cb?: (error?: Error | null) => void): void {

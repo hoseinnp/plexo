@@ -101,6 +101,8 @@ declare module 'fs-chunk-store' {
     constructor(chunkLength: number, options: StoreOptions)
     /** By piece: the stretches of the torrent's files it covers. */
     chunkMap: { file: { path: string } }[][]
+    /** Each file at its full path; `open` opens it once, on its first read or write. */
+    files: { path: string; open: (cb: (error: Error | null) => void) => void }[]
     put(index: number, buf: Uint8Array, cb?: (error?: Error | null) => void): void
   }
 }

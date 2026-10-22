@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Download with Plexo",
   "short_name": "Plexo",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Send downloads from your browser to Plexo Download Manager.",
   "homepage_url": "https://getplexo.app",
   "icons": {
